@@ -1,1 +1,7 @@
 streamlit
+scipy.interpolate
+pandas
+numpy
+matplotlib
+seaborn
+scipy
