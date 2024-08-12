@@ -4,6 +4,5 @@ scipy.interpolate
 pandas
 numpy
 matplotlib
-matplotlib.pyplot
 seaborn
 scipy
