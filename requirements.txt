@@ -1,8 +1,7 @@
 streamlit
-pip
+matplotlib
 scipy.interpolate
 pandas
 numpy
-matplotlib
 seaborn
 scipy
