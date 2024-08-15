@@ -240,7 +240,59 @@ def run_on_off_simulation(params, outdoor_temp_values, interpolation_func):
 
 
 # Simülasyon Mantığı (Q-Öğrenme) 
+def run_pid_simulation(params, outdoor_temp_values, pid_params, interpolation_func):
+    """PID kontrol algoritması ile oda sıcaklığı simülasyonunu çalıştırır."""
+    time = []
+    room_temperatures = []
+    heater_output = []
+    heater_on_off_cycles = 0
 
+    integral_error = 0
+    previous_error = 0
+    room_temperature = params['initial_room_temperature']
+    heater_status = False
+    heater_on_duration = 0
+
+    for minute in np.arange(0, params['simulation_minutes'], 0.1):
+        time.append(minute)
+        outside_temperature = get_outdoor_temp(minute, outdoor_temp_values, interpolation_func)
+        error = params['thermostat_setting'] - room_temperature
+        proportional_term = pid_params['Kp'] * error
+        integral_error += error * 0.1
+        integral_term = pid_params['Ki'] * integral_error
+        derivative_term = pid_params['Kd'] * (error - previous_error) / 0.1
+        previous_error = error
+
+        pid_output = proportional_term + integral_term + derivative_term
+        pid_output = max(0, min(pid_output, 1))
+        heater_output.append(pid_output)
+
+        if pid_output > 0.5 and not heater_status:
+            heater_status = True
+            heater_on_duration = 0
+            heater_on_off_cycles += 1
+
+        if heater_status:
+            heater_on_duration += 0.1
+
+        if pid_output < 0.1 and heater_status and heater_on_duration >= params['min_run_time']:
+            heater_status = False
+
+        heat_loss = params['base_heat_loss'] * (room_temperature - outside_temperature) / 10
+        room_temperature += (params['heater_power'] * pid_output - heat_loss) * 0.1
+        room_temperatures.append(room_temperature)
+
+    comfort_area = calculate_area_between_temp(time, room_temperatures, params['thermostat_setting'])
+    overshoot = calculate_overshoot_area(time, room_temperatures, params['thermostat_setting'])
+    undershoot = calculate_undershoot_area(time, room_temperatures, params['thermostat_setting'])
+    return {
+        'time': time,
+        'room_temperatures': room_temperatures,
+        'comfort_area': comfort_area,
+        'overshoot': overshoot,
+        'undershoot': undershoot,
+        'on_off_cycles': heater_on_off_cycles
+    }
 # Global variables for Q-learning
 num_states = 41
 num_actions = 2
