@@ -41,7 +41,6 @@ def load_data():
         return None
 
 # Simülasyon Parametreleri 
-
 def get_simulation_parameters():
     """Kullanıcıdan simülasyon parametrelerini alır (varsayılan değerlerle)."""
     st.sidebar.header("Simülasyon Parametreleri")
@@ -51,13 +50,15 @@ def get_simulation_parameters():
     base_heat_loss = st.sidebar.slider("Temel Isı Kaybı (°C/dakika)", min_value=0.05, max_value=0.2, value=0.1)
     simulation_minutes = st.sidebar.number_input("Simülasyon Süresi (Dakika)", min_value=10, max_value=5000, value=60)
     thermostat_sensitivity = st.sidebar.slider("Termostat Hassasiyeti (°C)", min_value=0.1, max_value=0.5, value=0.5, step=0.1)
+    min_run_time = st.sidebar.number_input("Minimum Çalışma Süresi (Dakika)", min_value=0.2, max_value=10.0, value=2.0, step=0.1)
     return {
         'initial_room_temperature': initial_room_temperature,
         'thermostat_setting': thermostat_setting,
         'heater_power': heater_power,
         'base_heat_loss': base_heat_loss,
         'simulation_minutes': simulation_minutes,
-        'thermostat_sensitivity': thermostat_sensitivity
+        'thermostat_sensitivity': thermostat_sensitivity,
+        'min_run_time': min_run_time  # New parameter for minimum run time
     }
 
 # Q-Öğrenme Parametreleri 
@@ -81,7 +82,7 @@ def get_q_learning_parameters():
 def get_pid_parameters():
     """Kullanıcıdan PID parametrelerini alır (varsayılan değerlerle)."""
     st.sidebar.subheader("PID Parametreleri")
-    Kp = st.sidebar.slider("Kp (Oransal Kazanç)", min_value=0.1, max_value=10.0, value=1.0)
+    Kp = st.sidebar.slider("Kp (Oransal Kazanç)", min_value=0.1, max_value=20.0, value=1.0)
     Ki = st.sidebar.slider("Ki (İntegral Kazanç)", min_value=0.01, max_value=1.0, value=0.1)
     Kd = st.sidebar.slider("Kd (Türev Kazanç)", min_value=0.001, max_value=1.0, value=0.01)
     return {
@@ -190,21 +191,30 @@ def calculate_undershoot_area(time, room_temperatures, set_temp):
     return undershoot
 
 # Simülasyon Mantığı (Açma-Kapama) 
-
 def run_on_off_simulation(params, outdoor_temp_values, interpolation_func):
     """Açma-kapama kontrol algoritması ile oda sıcaklığı simülasyonunu çalıştırır."""
     time = []
     room_temperatures = []
-    room_temperature = params['initial_room_temperature']
     heater_status = False
+    heater_on_duration = 0  # Track how long the heater has been on
+    heater_on_off_cycles = 0
+    room_temperature = params['initial_room_temperature']
 
     for minute in np.arange(0, params['simulation_minutes'], 0.1):
         time.append(minute)
         outside_temperature = get_outdoor_temp(minute, outdoor_temp_values, interpolation_func)
 
-        if room_temperature < params['thermostat_setting'] - params['thermostat_sensitivity']:
+        if heater_status:
+            heater_on_duration += 0.1  # Increase heater on duration
+
+        # Check if heater should turn on
+        if room_temperature < params['thermostat_setting'] - params['thermostat_sensitivity'] and not heater_status:
             heater_status = True
-        elif room_temperature > params['thermostat_setting'] + params['thermostat_sensitivity']:
+            heater_on_duration = 0  # Reset duration counter when heater turns on
+            heater_on_off_cycles += 1  # Increment the cycle count
+
+        # Check if heater should turn off
+        elif room_temperature > params['thermostat_setting'] + params['thermostat_sensitivity'] and heater_status and heater_on_duration >= params['min_run_time']:
             heater_status = False
 
         heat_loss = params['base_heat_loss'] * (room_temperature - outside_temperature) / 10
@@ -224,8 +234,10 @@ def run_on_off_simulation(params, outdoor_temp_values, interpolation_func):
         'room_temperatures': room_temperatures,
         'comfort_area': comfort_area,
         'overshoot': overshoot,
-        'undershoot': undershoot
+        'undershoot': undershoot,
+        'on_off_cycles': heater_on_off_cycles  # Return the on-off cycle count
     }
+
 
 # Simülasyon Mantığı (Q-Öğrenme) 
 
@@ -233,46 +245,70 @@ def run_on_off_simulation(params, outdoor_temp_values, interpolation_func):
 num_states = 41
 num_actions = 2
 q_table = np.zeros((num_states, num_actions))
-
+# Update Q-Learning Simulation
 def run_q_learning_simulation(params, outdoor_temp_values, q_params, interpolation_func):
     """Q-öğrenme kontrol algoritması ile oda sıcaklığı simülasyonunu çalıştırır."""
-
-    global q_table 
+    global q_table
+    heater_on_off_cycles = 0
 
     for episode in range(q_params['episodes']):
         room_temperature = params['initial_room_temperature']
         state = get_state(room_temperature)
+        heater_status = False
+        heater_on_duration = 0
 
         for minute in np.arange(0, params['simulation_minutes'], 0.1):
             outside_temperature = get_outdoor_temp(minute, outdoor_temp_values, interpolation_func)
             action = get_action(state, q_table, q_params['exploration_rate'])
 
-            if action == 1:  # Isıtıcıyı aç
+            if action == 1 and not heater_status:
+                heater_status = True
+                heater_on_duration = 0
+                heater_on_off_cycles += 1
+
+            if heater_status:
+                heater_on_duration += 0.1
+
+            if action == 0 and heater_status and heater_on_duration >= params['min_run_time']:
+                heater_status = False
+
+            if heater_status:
                 room_temperature += params['heater_power'] * 0.1
-            else:  # Isıtıcıyı kapat
+            else:
                 heat_loss = params['base_heat_loss'] * (room_temperature - outside_temperature) / 10
                 room_temperature -= heat_loss * 0.1
 
             next_state = get_state(room_temperature)
             reward = get_reward(next_state, action, params['thermostat_setting'])
 
-            # Q-tablosunu güncelle
             q_table[state, action] += q_params['learning_rate'] * (
                 reward + q_params['discount_factor'] * np.max(q_table[next_state, :]) - q_table[state, action]
             )
             state = next_state
 
-    # Öğrenilen Q-tablosu ile son simülasyonu çalıştır
     time = []
     room_temperatures = []
     room_temperature = params['initial_room_temperature']
     state = get_state(room_temperature)
+    heater_status = False
+    heater_on_duration = 0
 
     for minute in np.arange(0, params['simulation_minutes'], 0.1):
         outside_temperature = get_outdoor_temp(minute, outdoor_temp_values, interpolation_func)
-        action = np.argmax(q_table[state, :]) 
+        action = np.argmax(q_table[state, :])
 
-        if action == 1:
+        if action == 1 and not heater_status:
+            heater_status = True
+            heater_on_duration = 0
+            heater_on_off_cycles += 1
+
+        if heater_status:
+            heater_on_duration += 0.1
+
+        if action == 0 and heater_status and heater_on_duration >= params['min_run_time']:
+            heater_status = False
+
+        if heater_status:
             room_temperature += params['heater_power'] * 0.1
         else:
             heat_loss = params['base_heat_loss'] * (room_temperature - outside_temperature) / 10
@@ -290,20 +326,23 @@ def run_q_learning_simulation(params, outdoor_temp_values, q_params, interpolati
         'room_temperatures': room_temperatures,
         'comfort_area': comfort_area,
         'overshoot': overshoot,
-        'undershoot': undershoot
+        'undershoot': undershoot,
+        'on_off_cycles': heater_on_off_cycles
     }
 
-# Simülasyon Mantığı (PID) 
 
 def run_pid_simulation(params, outdoor_temp_values, pid_params, interpolation_func):
     """PID kontrol algoritması ile oda sıcaklığı simülasyonunu çalıştırır."""
     time = []
     room_temperatures = []
     heater_output = []
+    heater_on_off_cycles = 0
 
     integral_error = 0
     previous_error = 0
     room_temperature = params['initial_room_temperature']
+    heater_status = False
+    heater_on_duration = 0
 
     for minute in np.arange(0, params['simulation_minutes'], 0.1):
         time.append(minute)
@@ -316,8 +355,19 @@ def run_pid_simulation(params, outdoor_temp_values, pid_params, interpolation_fu
         previous_error = error
 
         pid_output = proportional_term + integral_term + derivative_term
-        pid_output = max(0, min(pid_output, 1)) 
+        pid_output = max(0, min(pid_output, 1))
         heater_output.append(pid_output)
+
+        if pid_output > 0.5 and not heater_status:
+            heater_status = True
+            heater_on_duration = 0
+            heater_on_off_cycles += 1
+
+        if heater_status:
+            heater_on_duration += 0.1
+
+        if pid_output < 0.1 and heater_status and heater_on_duration >= params['min_run_time']:
+            heater_status = False
 
         heat_loss = params['base_heat_loss'] * (room_temperature - outside_temperature) / 10
         room_temperature += (params['heater_power'] * pid_output - heat_loss) * 0.1
@@ -331,7 +381,8 @@ def run_pid_simulation(params, outdoor_temp_values, pid_params, interpolation_fu
         'room_temperatures': room_temperatures,
         'comfort_area': comfort_area,
         'overshoot': overshoot,
-        'undershoot': undershoot
+        'undershoot': undershoot,
+        'on_off_cycles': heater_on_off_cycles
     }
 
 # Sonuçları İndirme Seçeneği
@@ -438,7 +489,7 @@ def run_simulations(simulation_types, outdoor_temp_values, sim_params, q_params=
         ax4.plot(outdoor_time, outdoor_temps, label="Dış Ortam Sıcaklığı", color='purple')
 
         # Saat dilimlerini ekle
-        hours = np.arange(0, 24, 3)  # 3 saatlik aralıklarla saat dilimleri
+        hours = np.arange(0, 27, 3)  # 3 saatlik aralıklarla saat dilimleri
         hour_ticks = hours * 60  # Saatleri dakikaya çevir
         ax4.set_xticks(hour_ticks)
         ax4.set_xticklabels([f"{hour:02d}:00" for hour in hours])
@@ -447,6 +498,27 @@ def run_simulations(simulation_types, outdoor_temp_values, sim_params, q_params=
         ax4.set_ylabel("Dış Ortam Sıcaklığı (°C)", fontsize=12)
         ax4.legend()
         st.pyplot(fig4)
+    st.write("### Termostat Açma-Kapama Döngü Sayısı")
+    fig2, ax2 = plt.subplots(figsize=(10, 6))
+    labels = list(results.keys())
+    on_off_cycles = [results[algo]['on_off_cycles'] for algo in labels]    
+    # Plotting On-Off Cycles
+    st.write("#### Algoritmaların Açma-Kapama Döngü Sayıları:")
+    for algo, cycles in zip(labels, on_off_cycles):
+        st.write(f"- **{algo}**: {cycles} döngü")
+    fig6, ax6 = plt.subplots(figsize=(10, 6))
+    labels = list(results.keys())
+    on_off_cycles = [results[algo]['on_off_cycles'] for algo in labels]
+
+    ax6.bar(labels, on_off_cycles, color='blue')
+    ax6.set_title('Termostat Açma-Kapama Döngü Sayısı', fontsize=14)
+    ax6.set_ylabel('Döngü Sayısı', fontsize=12)
+    st.pyplot(fig6)
+
+
+
+
+        
 
 # Main Execution 
 
