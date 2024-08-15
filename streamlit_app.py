@@ -50,7 +50,7 @@ def get_simulation_parameters():
     base_heat_loss = st.sidebar.slider("Temel Isı Kaybı (°C/dakika)", min_value=0.05, max_value=0.2, value=0.1)
     simulation_minutes = st.sidebar.number_input("Simülasyon Süresi (Dakika)", min_value=10, max_value=5000, value=60)
     thermostat_sensitivity = st.sidebar.slider("Termostat Hassasiyeti (°C)", min_value=0.1, max_value=0.5, value=0.5, step=0.1)
-    min_run_time = st.sidebar.number_input("Minimum Çalışma Süresi (Dakika)", min_value=0.2, max_value=10.0, value=2.0, step=0.1)
+    min_run_time = st.sidebar.number_input("Minimum Çalışma Süresi (Dakika)", min_value=0.2, max_value=1000.0, value=2.0, step=0.1)
     return {
         'initial_room_temperature': initial_room_temperature,
         'thermostat_setting': thermostat_setting,
@@ -82,8 +82,8 @@ def get_q_learning_parameters():
 def get_pid_parameters():
     """Kullanıcıdan PID parametrelerini alır (varsayılan değerlerle)."""
     st.sidebar.subheader("PID Parametreleri")
-    Kp = st.sidebar.slider("Kp (Oransal Kazanç)", min_value=0.1, max_value=20.0, value=1.0)
-    Ki = st.sidebar.slider("Ki (İntegral Kazanç)", min_value=0.01, max_value=1.0, value=0.1)
+    Kp = st.sidebar.slider("Kp (Oransal Kazanç)", min_value=0.1, max_value=20.0, value=19.0)
+    Ki = st.sidebar.slider("Ki (İntegral Kazanç)", min_value=0.01, max_value=1.0, value=0.15)
     Kd = st.sidebar.slider("Kd (Türev Kazanç)", min_value=0.001, max_value=1.0, value=0.01)
     return {
         'Kp': Kp,
@@ -245,11 +245,12 @@ def run_on_off_simulation(params, outdoor_temp_values, interpolation_func):
 num_states = 41
 num_actions = 2
 q_table = np.zeros((num_states, num_actions))
-# Update Q-Learning Simulation
+
+
 def run_q_learning_simulation(params, outdoor_temp_values, q_params, interpolation_func):
-    """Q-öğrenme kontrol algoritması ile oda sıcaklığı simülasyonunu çalıştırır."""
+    """Run the room temperature simulation using Q-learning control."""
     global q_table
-    heater_on_off_cycles = 0
+    total_on_off_cycles = 0  # Track the actual number of on-off cycles
 
     for episode in range(q_params['episodes']):
         room_temperature = params['initial_room_temperature']
@@ -259,25 +260,31 @@ def run_q_learning_simulation(params, outdoor_temp_values, q_params, interpolati
 
         for minute in np.arange(0, params['simulation_minutes'], 0.1):
             outside_temperature = get_outdoor_temp(minute, outdoor_temp_values, interpolation_func)
-            action = get_action(state, q_table, q_params['exploration_rate'])
+            exploration_rate = q_params['exploration_rate'] * (1 - episode / q_params['episodes'])  # Reduce exploration over time
+            action = get_action(state, q_table, exploration_rate)
 
-            if action == 1 and not heater_status:
-                heater_status = True
-                heater_on_duration = 0
-                heater_on_off_cycles += 1
-
+            # Update the heater's on duration if it is currently on
             if heater_status:
                 heater_on_duration += 0.1
 
+            # Turn on the heater
+            if action == 1 and not heater_status:
+                heater_status = True
+                heater_on_duration = 0  # Reset duration counter when heater turns on
+                total_on_off_cycles += 1  # Increment cycle count when heater is turned on
+
+            # Turn off the heater after the minimum run time
             if action == 0 and heater_status and heater_on_duration >= params['min_run_time']:
                 heater_status = False
 
+            # Update the room temperature based on the heater status
             if heater_status:
                 room_temperature += params['heater_power'] * 0.1
             else:
                 heat_loss = params['base_heat_loss'] * (room_temperature - outside_temperature) / 10
                 room_temperature -= heat_loss * 0.1
 
+            # Q-learning update
             next_state = get_state(room_temperature)
             reward = get_reward(next_state, action, params['thermostat_setting'])
 
@@ -286,28 +293,34 @@ def run_q_learning_simulation(params, outdoor_temp_values, q_params, interpolati
             )
             state = next_state
 
+    # Final simulation with learned policy
     time = []
     room_temperatures = []
     room_temperature = params['initial_room_temperature']
     state = get_state(room_temperature)
     heater_status = False
     heater_on_duration = 0
+    total_on_off_cycles = 0  # Reset cycle count for the final simulation
 
     for minute in np.arange(0, params['simulation_minutes'], 0.1):
         outside_temperature = get_outdoor_temp(minute, outdoor_temp_values, interpolation_func)
         action = np.argmax(q_table[state, :])
 
-        if action == 1 and not heater_status:
-            heater_status = True
-            heater_on_duration = 0
-            heater_on_off_cycles += 1
-
+        # Update the heater's on duration if it is currently on
         if heater_status:
             heater_on_duration += 0.1
 
+        # Turn on the heater
+        if action == 1 and not heater_status:
+            heater_status = True
+            heater_on_duration = 0  # Reset duration counter when heater turns on
+            total_on_off_cycles += 1  # Increment cycle count when heater is turned on
+
+        # Turn off the heater after the minimum run time
         if action == 0 and heater_status and heater_on_duration >= params['min_run_time']:
             heater_status = False
 
+        # Update the room temperature based on the heater status
         if heater_status:
             room_temperature += params['heater_power'] * 0.1
         else:
@@ -327,63 +340,9 @@ def run_q_learning_simulation(params, outdoor_temp_values, q_params, interpolati
         'comfort_area': comfort_area,
         'overshoot': overshoot,
         'undershoot': undershoot,
-        'on_off_cycles': heater_on_off_cycles
+        'on_off_cycles': total_on_off_cycles  # Return the actual number of on-off cycles
     }
 
-
-def run_pid_simulation(params, outdoor_temp_values, pid_params, interpolation_func):
-    """PID kontrol algoritması ile oda sıcaklığı simülasyonunu çalıştırır."""
-    time = []
-    room_temperatures = []
-    heater_output = []
-    heater_on_off_cycles = 0
-
-    integral_error = 0
-    previous_error = 0
-    room_temperature = params['initial_room_temperature']
-    heater_status = False
-    heater_on_duration = 0
-
-    for minute in np.arange(0, params['simulation_minutes'], 0.1):
-        time.append(minute)
-        outside_temperature = get_outdoor_temp(minute, outdoor_temp_values, interpolation_func)
-        error = params['thermostat_setting'] - room_temperature
-        proportional_term = pid_params['Kp'] * error
-        integral_error += error * 0.1
-        integral_term = pid_params['Ki'] * integral_error
-        derivative_term = pid_params['Kd'] * (error - previous_error) / 0.1
-        previous_error = error
-
-        pid_output = proportional_term + integral_term + derivative_term
-        pid_output = max(0, min(pid_output, 1))
-        heater_output.append(pid_output)
-
-        if pid_output > 0.5 and not heater_status:
-            heater_status = True
-            heater_on_duration = 0
-            heater_on_off_cycles += 1
-
-        if heater_status:
-            heater_on_duration += 0.1
-
-        if pid_output < 0.1 and heater_status and heater_on_duration >= params['min_run_time']:
-            heater_status = False
-
-        heat_loss = params['base_heat_loss'] * (room_temperature - outside_temperature) / 10
-        room_temperature += (params['heater_power'] * pid_output - heat_loss) * 0.1
-        room_temperatures.append(room_temperature)
-
-    comfort_area = calculate_area_between_temp(time, room_temperatures, params['thermostat_setting'])
-    overshoot = calculate_overshoot_area(time, room_temperatures, params['thermostat_setting'])
-    undershoot = calculate_undershoot_area(time, room_temperatures, params['thermostat_setting'])
-    return {
-        'time': time,
-        'room_temperatures': room_temperatures,
-        'comfort_area': comfort_area,
-        'overshoot': overshoot,
-        'undershoot': undershoot,
-        'on_off_cycles': heater_on_off_cycles
-    }
 
 # Sonuçları İndirme Seçeneği
 
