@@ -48,9 +48,9 @@ def get_simulation_parameters():
     thermostat_setting = st.sidebar.number_input("Termostat Ayarı (°C)", min_value=15, max_value=25, value=20)
     heater_power = st.sidebar.slider("Isıtıcı Gücü (°C/dakika)", min_value=0.1, max_value=0.5, value=0.3)
     base_heat_loss = st.sidebar.slider("Temel Isı Kaybı (°C/dakika)", min_value=0.05, max_value=0.2, value=0.1)
-    simulation_minutes = st.sidebar.number_input("Simülasyon Süresi (Dakika)", min_value=10, max_value=5000, value=60)
+    simulation_minutes = st.sidebar.number_input("Simülasyon Süresi (Dakika)", min_value=10, max_value=43200, value=60)
     thermostat_sensitivity = st.sidebar.slider("Termostat Hassasiyeti (°C)", min_value=0.1, max_value=0.5, value=0.5, step=0.1)
-    min_run_time = st.sidebar.number_input("Minimum Çalışma Süresi (Dakika)", min_value=0.2, max_value=1000.0, value=2.0, step=0.1)
+    min_run_time = st.sidebar.number_input("Minimum Çalışma Süresi (Dakika)", min_value=0.2, max_value=1000.0, value=1.0, step=0.1)
     return {
         'initial_room_temperature': initial_room_temperature,
         'thermostat_setting': thermostat_setting,
@@ -66,7 +66,7 @@ def get_simulation_parameters():
 def get_q_learning_parameters():
     """Kullanıcıdan Q-öğrenme parametrelerini alır (varsayılan değerlerle)."""
     st.sidebar.subheader("Q-Öğrenme Parametreleri")
-    episodes = st.sidebar.number_input("Eğitim Bölümleri", min_value=100, max_value=5000, value=1000)
+    episodes = st.sidebar.number_input("Eğitim Bölümleri", min_value=10, max_value=5000, value=1000)
     learning_rate = st.sidebar.slider("Öğrenme Oranı", min_value=0.01, max_value=1.0, value=0.1)
     discount_factor = st.sidebar.slider("İndirim Faktörü", min_value=0.01, max_value=1.0, value=0.95)
     exploration_rate = st.sidebar.slider("Keşif Oranı", min_value=0.01, max_value=1.0, value=0.1)
@@ -427,44 +427,39 @@ def run_simulations(simulation_types, outdoor_temp_values, sim_params, q_params=
     if "PID" in simulation_types:
         results["PID"] = run_pid_simulation(sim_params, outdoor_temp_values, pid_params, interpolation_func)
 
-    # Grafikleri Oluştur ve Görselleştir 
+    csv = convert_results_to_csv(results)
+    st.download_button("Sonuçları CSV Olarak İndir", csv, "simulasyon_sonuclari.csv", "text/csv")
 
-    fig1, ax1 = plt.subplots(figsize=(12, 6))
-    # Grafik stilini iyileştir
-    plt.style.use('ggplot')  # veya başka bir stil seçin
+    fig1, ax1 = plt.subplots(figsize=(10, 6))
+    plt.style.use('ggplot')  # Grafik stilini iyileştir
     for algo, data in results.items():
         ax1.plot(data['time'], data['room_temperatures'], label=f"Oda Sıcaklığı ({algo})", linewidth=2)
 
     ax1.axhline(y=sim_params['thermostat_setting'], color='r', linestyle='--', label="Termostat Ayarı", linewidth=2)
     ax1.set_xlabel("Zaman (Dakika)", fontsize=12)
-    ax1.set_ylabel("Sıcaklık (°C)", fontsize=12)  # Birim eklendi
+    ax1.set_ylabel("Sıcaklık (°C)", fontsize=12)
     ax1.legend(fontsize=10)
     ax1.grid(True)
     ax1.set_title("Oda Sıcaklığı Kontrol Simülasyonu", fontsize=14)
-
     st.pyplot(fig1)
 
     # Konfor ve Enerji Metrikleri Çubuk Grafik 
 
-    fig2, ax2 = plt.subplots(figsize=(10, 6))
+    fig2, ax2 = plt.subplots(figsize=(5, 2))
     labels = list(results.keys())
-    overshoot_values = [results[algo]['overshoot'] for algo in labels]
-    undershoot_values = [results[algo]['undershoot'] for algo in labels]
-
-    width = 0.35
+    overshoot_values = [result['overshoot'] for result in results.values()]
+    undershoot_values = [result['undershoot'] for result in results.values()]
     x = np.arange(len(labels))
-
-    ax2.bar(x - width/2, overshoot_values, width, label='Aşım', color='skyblue')
-    ax2.bar(x + width/2, undershoot_values, width, label='Alt Geçiş', color='lightcoral')
-
-    ax2.set_ylabel('Alan (°C*dakika)', fontsize=12)  # Birim ve metrik eklendi
+    width = 0.25
+    bars1 = ax2.bar(x - width, overshoot_values, width, label='Aşım')
+    bars2 = ax2.bar(x, undershoot_values, width, label='Alt Geçiş')
+    ax2.set_xlabel('Algoritmalar')
+    ax2.set_ylabel('Metrikler')
+    ax2.set_title('Konfor ve Enerji Metrikleri')
     ax2.set_xticks(x)
     ax2.set_xticklabels(labels)
     ax2.legend()
-    ax2.set_title("Konfor ve Enerji Tüketimi Metrikleri", fontsize=14)
-
     # Konfor ve Enerji Metriklerini Göster 
-
     st.write("### Konfor ve Enerji Metrikleri")
     st.write(f"**Aşım ve Alt Geçiş Değerleri:**")
     for algo in labels:
@@ -474,7 +469,7 @@ def run_simulations(simulation_types, outdoor_temp_values, sim_params, q_params=
 
     # Toplam Aşım ve Alt Geçiş Karşılaştırması 
 
-    fig3, ax3 = plt.subplots(figsize=(10, 6))
+    fig3, ax3 = plt.subplots(figsize=(6, 3))
     total_overshoot_undershoot = {algo: results[algo]['overshoot'] + results[algo]['undershoot'] for algo in labels}
 
     ax3.bar(total_overshoot_undershoot.keys(), total_overshoot_undershoot.values(), color=['skyblue', 'green', 'lightcoral'])
