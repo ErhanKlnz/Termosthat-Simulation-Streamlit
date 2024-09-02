@@ -16,12 +16,10 @@ st.write("Bu interaktif simülasyon, oda sıcaklığını korumak için farklı 
 # Dosya Yükleyici ve Hata Kontrolü
 
 def load_data():
-    """Kullanıcıdan CSV dosyası yükler, veri çerçevesine dönüştürür ve doğrular."""
     uploaded_file = st.file_uploader("Bir CSV dosyası seçin (Dış Ortam Sıcaklığı verilerini içeren)", type="csv")
     if uploaded_file is not None:
         try:
             df = pd.read_csv(uploaded_file)
-            # CSV dosyasının doğruluğunu kontrol et
             if 'Outdoor Temp (C)' not in df.columns:
                 st.error("CSV dosyası 'Outdoor Temp (C)' sütununu içermiyor. Lütfen doğru dosyayı yükleyin.")
                 return None
@@ -42,7 +40,6 @@ def load_data():
 
 # Simülasyon Parametreleri 
 def get_simulation_parameters():
-    """Kullanıcıdan simülasyon parametrelerini alır (varsayılan değerlerle)."""
     st.sidebar.header("Simülasyon Parametreleri")
     initial_room_temperature = st.sidebar.number_input("Başlangıç Oda Sıcaklığı (°C)", min_value=10, max_value=30, value=19)
     thermostat_setting = st.sidebar.number_input("Termostat Ayarı (°C)", min_value=15, max_value=25, value=20)
@@ -51,6 +48,7 @@ def get_simulation_parameters():
     simulation_minutes = st.sidebar.number_input("Simülasyon Süresi (Dakika)", min_value=10, max_value=43200, value=60)
     thermostat_sensitivity = st.sidebar.slider("Termostat Hassasiyeti (°C)", min_value=0.1, max_value=0.5, value=0.5, step=0.1)
     min_run_time = st.sidebar.number_input("Minimum Çalışma Süresi (Dakika)", min_value=0.2, max_value=1000.0, value=1.0, step=0.1)
+    min_off_time = st.sidebar.number_input("Minimum Kapalı Kalma Süresi (Dakika)", min_value=0.2, max_value=1000.0, value=1.0, step=0.1)
     return {
         'initial_room_temperature': initial_room_temperature,
         'thermostat_setting': thermostat_setting,
@@ -58,13 +56,13 @@ def get_simulation_parameters():
         'base_heat_loss': base_heat_loss,
         'simulation_minutes': simulation_minutes,
         'thermostat_sensitivity': thermostat_sensitivity,
-        'min_run_time': min_run_time  # New parameter for minimum run time
+        'min_run_time': min_run_time,
+        'min_off_time': min_off_time
     }
 
 # Q-Öğrenme Parametreleri 
 
 def get_q_learning_parameters():
-    """Kullanıcıdan Q-öğrenme parametrelerini alır (varsayılan değerlerle)."""
     st.sidebar.subheader("Q-Öğrenme Parametreleri")
     episodes = st.sidebar.number_input("Eğitim Bölümleri", min_value=10, max_value=5000, value=1000)
     learning_rate = st.sidebar.slider("Öğrenme Oranı", min_value=0.01, max_value=1.0, value=0.1)
@@ -80,8 +78,8 @@ def get_q_learning_parameters():
 # PID Parametreleri 
 
 def get_pid_parameters():
-    """Kullanıcıdan PID parametrelerini alır (varsayılan değerlerle)."""
     st.sidebar.subheader("PID Parametreleri")
+
     Kp = st.sidebar.slider("Kp (Oransal Kazanç)", min_value=0.1, max_value=20.0, value=19.0)
     Ki = st.sidebar.slider("Ki (İntegral Kazanç)", min_value=0.01, max_value=1.0, value=0.15)
     Kd = st.sidebar.slider("Kd (Türev Kazanç)", min_value=0.001, max_value=1.0, value=0.01)
@@ -94,45 +92,41 @@ def get_pid_parameters():
 # Yardımcı Fonksiyonlar 
 
 def get_state(temperature):
-    """Sıcaklığı durumlara ayırır."""
     return int(min(40, max(0, (temperature - 10) / 0.5)))
 
-def get_action(state, q_table, exploration_rate):
-    """Epsilon-greedy politikasına göre bir eylem seçer."""
-    if np.random.uniform(0, 1) < exploration_rate:
-        return np.random.choice(num_actions)  # Exploration
+def get_action(state, q_table, exploration_rate, num_actions):
+    if np.random.rand() < exploration_rate:
+        return np.random.choice(num_actions)
     else:
-        return np.argmax(q_table[state, :])  # Exploitation
+        return np.argmax(q_table[state])
+
 
 def get_reward(state, action, thermostat_setting):
-    """Durum ve eyleme göre ödülü hesaplar."""
     state_temp = 10 + state * 0.5
 
     if abs(state_temp - thermostat_setting) <= 0.5:
-        return 10  # İstenen aralıkta
-    elif action == 1 and state_temp > thermostat_setting + 0.5:  # Çok sıcak
+        return 10
+    elif action == 1 and state_temp > thermostat_setting + 0.5:
         return -10
-    elif action == 0 and state_temp < thermostat_setting - 0.5:  # Çok soğuk
+    elif action == 0 and state_temp < thermostat_setting - 0.5:
         return -5
     else:
-        return -1  # Aralıkta olmamanın cezası
+        return -1
 
 # Dış Ortam Sıcaklığı Seçimi ve İnterpolasyon
 
 def get_outdoor_temperature_data():
-    """Kullanıcıdan dış ortam sıcaklığı verilerini alır (CSV veya interpolasyon)."""
     data_source = st.sidebar.radio("Dış Ortam Sıcaklığı Veri Kaynağı", ["CSV Dosyası", "İnterpolasyon (Kübik Spline)"])
 
     if data_source == "CSV Dosyası":
         outdoor_temp_values = load_data()
-        return outdoor_temp_values, None  # İnterpolasyon fonksiyonu None olarak döndürülür
+        return outdoor_temp_values, None
 
     elif data_source == "İnterpolasyon (Kübik Spline)":
         st.sidebar.subheader("İnterpolasyon Verileri")
         
-        # Session state kullanarak sıcaklık değerlerini sakla
         if 'temperatures' not in st.session_state:
-            st.session_state.temperatures = [20, 20, 20, 20, 20]  # Varsayılan değerler
+            st.session_state.temperatures = [20, 20, 20, 20, 20]
 
         with st.form("interpolation_form"):
             hours = [0, 6, 12, 18, 24]
@@ -141,28 +135,22 @@ def get_outdoor_temperature_data():
 
             submitted = st.form_submit_button("İnterpolasyonu Uygula")
             if submitted:
-                # Güncel sıcaklık değerlerini kullanarak interpolasyon fonksiyonunu oluştur
                 interpolation_func = CubicSpline(hours, st.session_state.temperatures)
                 return None, interpolation_func 
 
-        # Form gönderilmediyse veya ilk çalıştırmada, session state'deki değerlerle interpolasyon fonksiyonu döndür
         return None, CubicSpline(hours, st.session_state.temperatures)
 
 def get_outdoor_temp(minute, outdoor_temp_values, interpolation_func):
-    """Belirli bir dakika için dış ortam sıcaklığını alır (CSV veya interpolasyon)."""
     if outdoor_temp_values is not None:
-        # CSV verileri kullanılıyorsa
         index = int(minute // 5) 
         return outdoor_temp_values[min(index, len(outdoor_temp_values) - 1)]
     elif interpolation_func is not None:
-        # İnterpolasyon kullanılıyorsa
-        hour = minute / 60  # Dakikayı saate çevir
-        return float(interpolation_func(hour))  # İnterpolasyon fonksiyonundan sıcaklığı al
+        hour = minute / 60
+        return float(interpolation_func(hour))
 
 # Alan Hesaplama Fonksiyonları
 
 def calculate_area_between_temp(time, room_temperatures, set_temp):
-    """Mevcut sıcaklık ve ayarlanan sıcaklık arasındaki alanı hesaplar."""
     area = 0
     for i in range(1, len(time)):
         dt = time[i] - time[i - 1]
@@ -171,7 +159,6 @@ def calculate_area_between_temp(time, room_temperatures, set_temp):
     return area
 
 def calculate_overshoot_area(time, room_temperatures, set_temp):
-    """Aşım alanını hesaplar."""
     overshoot = 0
     for i in range(1, len(time)):
         dt = time[i] - time[i - 1]
@@ -181,7 +168,6 @@ def calculate_overshoot_area(time, room_temperatures, set_temp):
     return overshoot
 
 def calculate_undershoot_area(time, room_temperatures, set_temp):
-    """Alt geçiş alanını hesaplar."""
     undershoot = 0
     for i in range(1, len(time)):
         dt = time[i] - time[i - 1]
@@ -192,11 +178,11 @@ def calculate_undershoot_area(time, room_temperatures, set_temp):
 
 # Simülasyon Mantığı (Açma-Kapama) 
 def run_on_off_simulation(params, outdoor_temp_values, interpolation_func):
-    """Açma-kapama kontrol algoritması ile oda sıcaklığı simülasyonunu çalıştırır."""
     time = []
     room_temperatures = []
     heater_status = False
-    heater_on_duration = 0  # Track how long the heater has been on
+    heater_on_duration = 0
+    heater_off_duration = params['min_off_time']  # Track how long the heater has been off
     heater_on_off_cycles = 0
     room_temperature = params['initial_room_temperature']
 
@@ -205,15 +191,16 @@ def run_on_off_simulation(params, outdoor_temp_values, interpolation_func):
         outside_temperature = get_outdoor_temp(minute, outdoor_temp_values, interpolation_func)
 
         if heater_status:
-            heater_on_duration += 0.1  # Increase heater on duration
+            heater_on_duration += 0.1
+        else:
+            heater_off_duration += 0.1
 
-        # Check if heater should turn on
-        if room_temperature < params['thermostat_setting'] - params['thermostat_sensitivity'] and not heater_status:
+        if room_temperature < params['thermostat_setting'] - params['thermostat_sensitivity'] and not heater_status and heater_off_duration >= params['min_off_time']:
             heater_status = True
-            heater_on_duration = 0  # Reset duration counter when heater turns on
-            heater_on_off_cycles += 1  # Increment the cycle count
+            heater_on_duration = 0
+            heater_off_duration = 0  # Reset off duration counter when heater turns on
+            heater_on_off_cycles += 1
 
-        # Check if heater should turn off
         elif room_temperature > params['thermostat_setting'] + params['thermostat_sensitivity'] and heater_status and heater_on_duration >= params['min_run_time']:
             heater_status = False
 
@@ -235,13 +222,11 @@ def run_on_off_simulation(params, outdoor_temp_values, interpolation_func):
         'comfort_area': comfort_area,
         'overshoot': overshoot,
         'undershoot': undershoot,
-        'on_off_cycles': heater_on_off_cycles  # Return the on-off cycle count
+        'on_off_cycles': heater_on_off_cycles
     }
 
-
-# Simülasyon Mantığı (Q-Öğrenme) 
+# Simülasyon Mantığı (PID) 
 def run_pid_simulation(params, outdoor_temp_values, pid_params, interpolation_func):
-    """PID kontrol algoritması ile oda sıcaklığı simülasyonunu çalıştırır."""
     time = []
     room_temperatures = []
     heater_output = []
@@ -252,6 +237,7 @@ def run_pid_simulation(params, outdoor_temp_values, pid_params, interpolation_fu
     room_temperature = params['initial_room_temperature']
     heater_status = False
     heater_on_duration = 0
+    heater_off_duration = params['min_off_time']
 
     for minute in np.arange(0, params['simulation_minutes'], 0.1):
         time.append(minute)
@@ -267,13 +253,16 @@ def run_pid_simulation(params, outdoor_temp_values, pid_params, interpolation_fu
         pid_output = max(0, min(pid_output, 1))
         heater_output.append(pid_output)
 
-        if pid_output > 0.5 and not heater_status:
+        if pid_output > 0.5 and not heater_status and heater_off_duration >= params['min_off_time']:
             heater_status = True
             heater_on_duration = 0
+            heater_off_duration = 0
             heater_on_off_cycles += 1
 
         if heater_status:
             heater_on_duration += 0.1
+        else:
+            heater_off_duration += 0.1
 
         if pid_output < 0.1 and heater_status and heater_on_duration >= params['min_run_time']:
             heater_status = False
@@ -293,50 +282,46 @@ def run_pid_simulation(params, outdoor_temp_values, pid_params, interpolation_fu
         'undershoot': undershoot,
         'on_off_cycles': heater_on_off_cycles
     }
-# Global variables for Q-learning
 num_states = 41
 num_actions = 2
 q_table = np.zeros((num_states, num_actions))
-
+# Simülasyon Mantığı (Q-Öğrenme) 
 
 def run_q_learning_simulation(params, outdoor_temp_values, q_params, interpolation_func):
-    """Run the room temperature simulation using Q-learning control."""
-    global q_table
-    total_on_off_cycles = 0  # Track the actual number of on-off cycles
-
+    # q_table'ı uygun şekilde başlatmalısınız
+    total_on_off_cycles = 0
     for episode in range(q_params['episodes']):
         room_temperature = params['initial_room_temperature']
         state = get_state(room_temperature)
         heater_status = False
         heater_on_duration = 0
+        heater_off_duration = params['min_off_time']
 
         for minute in np.arange(0, params['simulation_minutes'], 0.1):
             outside_temperature = get_outdoor_temp(minute, outdoor_temp_values, interpolation_func)
-            exploration_rate = q_params['exploration_rate'] * (1 - episode / q_params['episodes'])  # Reduce exploration over time
-            action = get_action(state, q_table, exploration_rate)
+            exploration_rate = q_params['exploration_rate'] * (1 - episode / q_params['episodes'])
+            action = get_action(state, q_table, exploration_rate,num_actions)
 
-            # Update the heater's on duration if it is currently on
             if heater_status:
                 heater_on_duration += 0.1
+            else:
+                heater_off_duration += 0.1
 
-            # Turn on the heater
-            if action == 1 and not heater_status:
+            if action == 1 and not heater_status and heater_off_duration >= params['min_off_time']:
                 heater_status = True
-                heater_on_duration = 0  # Reset duration counter when heater turns on
-                total_on_off_cycles += 1  # Increment cycle count when heater is turned on
+                heater_on_duration = 0
+                heater_off_duration = 0
+                total_on_off_cycles += 1
 
-            # Turn off the heater after the minimum run time
             if action == 0 and heater_status and heater_on_duration >= params['min_run_time']:
                 heater_status = False
 
-            # Update the room temperature based on the heater status
             if heater_status:
                 room_temperature += params['heater_power'] * 0.1
             else:
                 heat_loss = params['base_heat_loss'] * (room_temperature - outside_temperature) / 10
                 room_temperature -= heat_loss * 0.1
 
-            # Q-learning update
             next_state = get_state(room_temperature)
             reward = get_reward(next_state, action, params['thermostat_setting'])
 
@@ -345,34 +330,33 @@ def run_q_learning_simulation(params, outdoor_temp_values, q_params, interpolati
             )
             state = next_state
 
-    # Final simulation with learned policy
     time = []
     room_temperatures = []
     room_temperature = params['initial_room_temperature']
     state = get_state(room_temperature)
     heater_status = False
     heater_on_duration = 0
-    total_on_off_cycles = 0  # Reset cycle count for the final simulation
+    heater_off_duration = params['min_off_time']
+    total_on_off_cycles = 0
 
     for minute in np.arange(0, params['simulation_minutes'], 0.1):
         outside_temperature = get_outdoor_temp(minute, outdoor_temp_values, interpolation_func)
         action = np.argmax(q_table[state, :])
 
-        # Update the heater's on duration if it is currently on
         if heater_status:
             heater_on_duration += 0.1
+        else:
+            heater_off_duration += 0.1
 
-        # Turn on the heater
-        if action == 1 and not heater_status:
+        if action == 1 and not heater_status and heater_off_duration >= params['min_off_time']:
             heater_status = True
-            heater_on_duration = 0  # Reset duration counter when heater turns on
-            total_on_off_cycles += 1  # Increment cycle count when heater is turned on
+            heater_on_duration = 0
+            heater_off_duration = 0
+            total_on_off_cycles += 1
 
-        # Turn off the heater after the minimum run time
         if action == 0 and heater_status and heater_on_duration >= params['min_run_time']:
             heater_status = False
 
-        # Update the room temperature based on the heater status
         if heater_status:
             room_temperature += params['heater_power'] * 0.1
         else:
@@ -392,14 +376,12 @@ def run_q_learning_simulation(params, outdoor_temp_values, q_params, interpolati
         'comfort_area': comfort_area,
         'overshoot': overshoot,
         'undershoot': undershoot,
-        'on_off_cycles': total_on_off_cycles  # Return the actual number of on-off cycles
+        'on_off_cycles': total_on_off_cycles
     }
-
 
 # Sonuçları İndirme Seçeneği
 
 def convert_results_to_csv(results):
-    """Simülasyon sonuçlarını CSV formatına dönüştürür ve sütun başlıklarına birimler ekler."""
     data = []
     for algo, result in results.items():
         for i in range(len(result['time'])):
@@ -414,8 +396,6 @@ def convert_results_to_csv(results):
 # Ana Çalıştırma Fonksiyonu 
 
 def run_simulations(simulation_types, outdoor_temp_values, sim_params, q_params=None, pid_params=None, interpolation_func=None):
-    """Seçilen simülasyonları çalıştırır ve sonuçları görselleştirir."""
-
     results = {}
 
     if "Açma-Kapama" in simulation_types:
@@ -431,7 +411,7 @@ def run_simulations(simulation_types, outdoor_temp_values, sim_params, q_params=
     st.download_button("Sonuçları CSV Olarak İndir", csv, "simulasyon_sonuclari.csv", "text/csv")
 
     fig1, ax1 = plt.subplots(figsize=(10, 6))
-    plt.style.use('ggplot')  # Grafik stilini iyileştir
+    plt.style.use('ggplot')
     for algo, data in results.items():
         ax1.plot(data['time'], data['room_temperatures'], label=f"Oda Sıcaklığı ({algo})", linewidth=2)
 
@@ -440,10 +420,8 @@ def run_simulations(simulation_types, outdoor_temp_values, sim_params, q_params=
     ax1.set_ylabel("Sıcaklık (°C)", fontsize=12)
     ax1.legend(fontsize=10)
     ax1.grid(True)
-    ax1.set_title("Oda Sıcaklığı Kontrol Simülasyonu", fontsize=14)
+    st.write(f"**Oda Sıcaklığı Kontrol Simülasyonu:**")
     st.pyplot(fig1)
-
-    # Konfor ve Enerji Metrikleri Çubuk Grafik 
 
     fig2, ax2 = plt.subplots(figsize=(5, 2))
     labels = list(results.keys())
@@ -459,7 +437,6 @@ def run_simulations(simulation_types, outdoor_temp_values, sim_params, q_params=
     ax2.set_xticks(x)
     ax2.set_xticklabels(labels)
     ax2.legend()
-    # Konfor ve Enerji Metriklerini Göster 
     st.write("### Konfor ve Enerji Metrikleri")
     st.write(f"**Aşım ve Alt Geçiş Değerleri:**")
     for algo in labels:
@@ -467,16 +444,11 @@ def run_simulations(simulation_types, outdoor_temp_values, sim_params, q_params=
 
     st.pyplot(fig2)
 
-    # Toplam Aşım ve Alt Geçiş Karşılaştırması 
-
     fig3, ax3 = plt.subplots(figsize=(6, 3))
     total_overshoot_undershoot = {algo: results[algo]['overshoot'] + results[algo]['undershoot'] for algo in labels}
-
     ax3.bar(total_overshoot_undershoot.keys(), total_overshoot_undershoot.values(), color=['skyblue', 'green', 'lightcoral'])
     ax3.set_title('Toplam Aşım ve Alt Geçiş Karşılaştırması', fontsize=14)
     ax3.set_ylabel('Toplam Alan (°C*dakika)', fontsize=12) 
-
-    # Toplam Aşım ve Alt Geçiş Karşılaştırmasını Göster 
 
     st.write("### Toplam Aşım ve Alt Geçiş Karşılaştırması")
     st.write(f"**Toplam Alan Değerleri:**")
@@ -484,8 +456,7 @@ def run_simulations(simulation_types, outdoor_temp_values, sim_params, q_params=
         st.write(f"{algo} - Toplam Alan: {total_value:.2f} °C*dakika")
 
     st.pyplot(fig3)
-
-    # Dış Ortam Sıcaklığı Grafiği 
+       # Dış Ortam Sıcaklığı Grafiği 
 
     if outdoor_temp_values is not None or interpolation_func is not None:  # Sadece veri yüklendiğinde veya interpolasyon yapıldığında grafiği göster
         st.write("### Dış Ortam Sıcaklığı Grafiği")
@@ -520,11 +491,6 @@ def run_simulations(simulation_types, outdoor_temp_values, sim_params, q_params=
     ax6.set_title('Termostat Açma-Kapama Döngü Sayısı', fontsize=14)
     ax6.set_ylabel('Döngü Sayısı', fontsize=12)
     st.pyplot(fig6)
-
-
-
-
-        
 
 # Main Execution 
 
