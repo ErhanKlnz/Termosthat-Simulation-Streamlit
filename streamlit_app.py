@@ -99,10 +99,6 @@ def get_decision_tree_parameters():
 def get_state(temperature):
     return int(min(40, max(0, (temperature - 10) / 0.5)))
 
-
-
-
-
 # Dış Ortam Sıcaklığı Seçimi ve İnterpolasyon
 def get_outdoor_temperature_data():
     data_source = st.sidebar.radio("Dış Ortam Sıcaklığı Veri Kaynağı", ["CSV Dosyası", "İnterpolasyon (Kübik Spline)"])
@@ -224,6 +220,8 @@ def run_pid_simulation(params, outdoor_temp_values, pid_params, interpolation_fu
     for minute in np.arange(0, params['simulation_minutes'], 0.1):
         time.append(minute)
         outside_temperature = get_outdoor_temp(minute, outdoor_temp_values, interpolation_func)
+
+        # PID Control calculations
         error = params['thermostat_setting'] - room_temperature
         proportional_term = pid_params['Kp'] * error
         integral_error += error * 0.1
@@ -235,26 +233,32 @@ def run_pid_simulation(params, outdoor_temp_values, pid_params, interpolation_fu
         pid_output = max(0, min(pid_output, 1))
         heater_output.append(pid_output)
 
-        if heater_status:  # Isıtıcı açıksa
+        # Update heater status based on PID output and min_run_time / min_off_time constraints
+        if heater_status:
             heater_on_duration += 0.1
-            heater_off_duration = 0  # Isıtıcı açıkken kapalı kalma süresini sıfırla
-        else:  # Isıtıcı kapalıysa
+            heater_off_duration = 0  # Reset off duration when the heater is on
+        else:
             heater_off_duration += 0.1
-            heater_on_duration = 0  # Isıtıcı kapalıyken açık kalma süresini sıfırla
+            heater_on_duration = 0  # Reset on duration when the heater is off
 
-        if (pid_output > 0.5 and not heater_status and heater_off_duration >= params['min_off_time'] and 
-            room_temperature < params['thermostat_setting'] - params['thermostat_sensitivity']):
+        if (pid_output > 0.5 and not heater_status and heater_off_duration >= params['min_off_time']):
             heater_status = True
             heater_on_duration = 0
             heater_on_off_cycles += 1
 
-        if (pid_output < 0.1 and heater_status and heater_on_duration >= params['min_run_time'] and 
-            room_temperature > params['thermostat_setting'] + params['thermostat_sensitivity']):
+        if (pid_output < 0.1 and heater_status and heater_on_duration >= params['min_run_time']):
             heater_status = False
             heater_off_duration = 0
 
+        # Calculate heat loss
         heat_loss = params['base_heat_loss'] * (room_temperature - outside_temperature) / 10
-        room_temperature += (params['heater_power'] * pid_output - heat_loss) * 0.1
+
+        # Update room temperature based on heater status and heat loss
+        if heater_status:
+            room_temperature += params['heater_power'] * 0.1
+        else:
+            room_temperature -= heat_loss * 0.1
+
         room_temperatures.append(room_temperature)
 
     comfort_area = calculate_area_between_temp(time, room_temperatures, params['thermostat_setting'])
