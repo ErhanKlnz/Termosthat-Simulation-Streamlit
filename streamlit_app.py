@@ -103,17 +103,22 @@ def get_action(state, q_table, exploration_rate, num_actions):
         return np.random.choice(num_actions)
     else:
         return np.argmax(q_table[state])
-
 def get_reward(state, action, thermostat_setting):
     state_temp = 10 + state * 0.5
+    # Set noktasına çok yakın sıcaklıklar için yüksek ödüller
     if abs(state_temp - thermostat_setting) <= 0.5:
-        return 10
-    elif action == 1 and state_temp > thermostat_setting + 0.5:
-        return -10
-    elif action == 0 and state_temp < thermostat_setting - 0.5:
-        return -5
+        return 20  # Daha yüksek ödül
+    # Set noktasının üzerinde ve ısıtıcı hala çalışıyorsa çok yüksek ceza
+    elif action == 1 and state_temp > thermostat_setting:
+        return -50  # Çok yüksek ceza
+    # Set noktasının altında ve ısıtıcı kapalıysa yüksek ceza
+    elif action == 0 and state_temp < thermostat_setting:
+        return -30  # Yüksek ceza
+    # Diğer durumlarda daha düşük ödül/ceza
     else:
-        return -1
+        return -1  # Hafif ceza
+
+
 
 # Dış Ortam Sıcaklığı Seçimi ve İnterpolasyon
 def get_outdoor_temperature_data():
@@ -170,39 +175,48 @@ def calculate_undershoot_area(time, room_temperatures, set_temp):
             undershoot += (set_temp - avg_temp) * dt
     return undershoot
 
-# Simülasyon Mantığı (Açma-Kapama) 
 def run_on_off_simulation(params, outdoor_temp_values, interpolation_func):
     time = []
     room_temperatures = []
     heater_status = False
     heater_on_duration = 0
-    heater_off_duration = params['min_off_time']  # Track how long the heater has been off
+    heater_off_duration = params['min_off_time']
     heater_on_off_cycles = 0
     room_temperature = params['initial_room_temperature']
 
     for minute in np.arange(0, params['simulation_minutes'], 0.1):
         time.append(minute)
         outside_temperature = get_outdoor_temp(minute, outdoor_temp_values, interpolation_func)
+
         if heater_status:
             heater_on_duration += 0.1
         else:
             heater_off_duration += 0.1
-        if room_temperature < params['thermostat_setting'] - params['thermostat_sensitivity'] and not heater_status and heater_off_duration >= params['min_off_time']:
+
+        if (room_temperature < params['thermostat_setting'] - params['thermostat_sensitivity'] and 
+            not heater_status and heater_off_duration >= params['min_off_time']):
             heater_status = True
             heater_on_duration = 0
-            heater_off_duration = 0  # Reset off duration counter when heater turns on
+            heater_off_duration = 0
             heater_on_off_cycles += 1
-        elif room_temperature > params['thermostat_setting'] + params['thermostat_sensitivity'] and heater_status and heater_on_duration >= params['min_run_time']:
+
+        elif (room_temperature > params['thermostat_setting'] + params['thermostat_sensitivity'] and 
+              heater_status and heater_on_duration >= params['min_run_time']):
             heater_status = False
+
         heat_loss = params['base_heat_loss'] * (room_temperature - outside_temperature) / 10
+
         if heater_status:
             room_temperature += params['heater_power'] * 0.1
         else:
             room_temperature -= heat_loss * 0.1
+
         room_temperatures.append(room_temperature)
+
     comfort_area = calculate_area_between_temp(time, room_temperatures, params['thermostat_setting'])
     overshoot = calculate_overshoot_area(time, room_temperatures, params['thermostat_setting'])
     undershoot = calculate_undershoot_area(time, room_temperatures, params['thermostat_setting'])
+
     return {
         'time': time,
         'room_temperatures': room_temperatures,
@@ -211,13 +225,12 @@ def run_on_off_simulation(params, outdoor_temp_values, interpolation_func):
         'undershoot': undershoot,
         'on_off_cycles': heater_on_off_cycles
     }
-
-# Simülasyon Mantığı (PID) 
 def run_pid_simulation(params, outdoor_temp_values, pid_params, interpolation_func):
     time = []
     room_temperatures = []
     heater_output = []
     heater_on_off_cycles = 0
+
     integral_error = 0
     previous_error = 0
     room_temperature = params['initial_room_temperature']
@@ -234,26 +247,37 @@ def run_pid_simulation(params, outdoor_temp_values, pid_params, interpolation_fu
         integral_term = pid_params['Ki'] * integral_error
         derivative_term = pid_params['Kd'] * (error - previous_error) / 0.1
         previous_error = error
+
         pid_output = proportional_term + integral_term + derivative_term
         pid_output = max(0, min(pid_output, 1))
         heater_output.append(pid_output)
-        if pid_output > 0.5 and not heater_status and heater_off_duration >= params['min_off_time']:
+
+        if heater_status:  # Isıtıcı açıksa
+            heater_on_duration += 0.1
+            heater_off_duration = 0  # Isıtıcı açıkken kapalı kalma süresini sıfırla
+        else:  # Isıtıcı kapalıysa
+            heater_off_duration += 0.1
+            heater_on_duration = 0  # Isıtıcı kapalıyken açık kalma süresini sıfırla
+
+        if (pid_output > 0.5 and not heater_status and heater_off_duration >= params['min_off_time'] and 
+            room_temperature < params['thermostat_setting'] - params['thermostat_sensitivity']):
             heater_status = True
             heater_on_duration = 0
-            heater_off_duration = 0
             heater_on_off_cycles += 1
-        if heater_status:
-            heater_on_duration += 0.1
-        else:
-            heater_off_duration += 0.1
-        if pid_output < 0.1 and heater_status and heater_on_duration >= params['min_run_time']:
+
+        if (pid_output < 0.1 and heater_status and heater_on_duration >= params['min_run_time'] and 
+            room_temperature > params['thermostat_setting'] + params['thermostat_sensitivity']):
             heater_status = False
+            heater_off_duration = 0
+
         heat_loss = params['base_heat_loss'] * (room_temperature - outside_temperature) / 10
         room_temperature += (params['heater_power'] * pid_output - heat_loss) * 0.1
         room_temperatures.append(room_temperature)
+
     comfort_area = calculate_area_between_temp(time, room_temperatures, params['thermostat_setting'])
     overshoot = calculate_overshoot_area(time, room_temperatures, params['thermostat_setting'])
     undershoot = calculate_undershoot_area(time, room_temperatures, params['thermostat_setting'])
+
     return {
         'time': time,
         'room_temperatures': room_temperatures,
@@ -263,38 +287,48 @@ def run_pid_simulation(params, outdoor_temp_values, pid_params, interpolation_fu
         'on_off_cycles': heater_on_off_cycles
     }
 
-# Simülasyon Mantığı (Q-Öğrenme) 
 def run_q_learning_simulation(params, outdoor_temp_values, q_params, interpolation_func):
-    num_states = 40
+    num_states = 41
     num_actions = 2
-    q_table = np.zeros((num_states, num_actions))
+    q_table = np.ones((num_states, num_actions)) * 0.1  # Tüm Q değerlerini küçük bir pozitif değerle başlat
+
     total_on_off_cycles = 0
+
     for episode in range(q_params['episodes']):
         room_temperature = params['initial_room_temperature']
         state = get_state(room_temperature)
         heater_status = False
         heater_on_duration = 0
         heater_off_duration = params['min_off_time']
+        
+        exploration_rate = max(0.01, q_params['exploration_rate'] * (1 - episode / q_params['episodes']))  # Dinamik keşif oranı
+        
         for minute in np.arange(0, params['simulation_minutes'], 0.1):
             outside_temperature = get_outdoor_temp(minute, outdoor_temp_values, interpolation_func)
-            exploration_rate = q_params['exploration_rate'] * (1 - episode / q_params['episodes'])
             action = get_action(state, q_table, exploration_rate, num_actions)
+
             if heater_status:
                 heater_on_duration += 0.1
             else:
                 heater_off_duration += 0.1
-            if action == 1 and not heater_status and heater_off_duration >= params['min_off_time']:
+
+            if (action == 1 and not heater_status and heater_off_duration >= params['min_off_time'] and
+                room_temperature < params['thermostat_setting'] - params['thermostat_sensitivity']):
                 heater_status = True
                 heater_on_duration = 0
                 heater_off_duration = 0
                 total_on_off_cycles += 1
-            if action == 0 and heater_status and heater_on_duration >= params['min_run_time']:
+
+            if (action == 0 and heater_status and heater_on_duration >= params['min_run_time'] and
+                room_temperature > params['thermostat_setting'] + params['thermostat_sensitivity']):
                 heater_status = False
+
             if heater_status:
                 room_temperature += params['heater_power'] * 0.1
             else:
                 heat_loss = params['base_heat_loss'] * (room_temperature - outside_temperature) / 10
                 room_temperature -= heat_loss * 0.1
+
             next_state = get_state(room_temperature)
             reward = get_reward(next_state, action, params['thermostat_setting'])
             q_table[state, action] += q_params['learning_rate'] * (
@@ -302,6 +336,7 @@ def run_q_learning_simulation(params, outdoor_temp_values, q_params, interpolati
             )
             state = next_state
 
+    # Eğitimden sonra en iyi politikanın uygulanması
     time = []
     room_temperatures = []
     room_temperature = params['initial_room_temperature']
@@ -320,13 +355,15 @@ def run_q_learning_simulation(params, outdoor_temp_values, q_params, interpolati
         else:
             heater_off_duration += 0.1
 
-        if action == 1 and not heater_status and heater_off_duration >= params['min_off_time']:
+        if (action == 1 and not heater_status and heater_off_duration >= params['min_off_time'] and
+            room_temperature < params['thermostat_setting'] - params['thermostat_sensitivity']):
             heater_status = True
             heater_on_duration = 0
             heater_off_duration = 0
             total_on_off_cycles += 1
 
-        if action == 0 and heater_status and heater_on_duration >= params['min_run_time']:
+        if (action == 0 and heater_status and heater_on_duration >= params['min_run_time'] and
+            room_temperature > params['thermostat_setting'] + params['thermostat_sensitivity']):
             heater_status = False
 
         if heater_status:
@@ -342,6 +379,7 @@ def run_q_learning_simulation(params, outdoor_temp_values, q_params, interpolati
     comfort_area = calculate_area_between_temp(time, room_temperatures, params['thermostat_setting'])
     overshoot = calculate_overshoot_area(time, room_temperatures, params['thermostat_setting'])
     undershoot = calculate_undershoot_area(time, room_temperatures, params['thermostat_setting'])
+    
     return {
         'time': time,
         'room_temperatures': room_temperatures,
@@ -350,98 +388,84 @@ def run_q_learning_simulation(params, outdoor_temp_values, q_params, interpolati
         'undershoot': undershoot,
         'on_off_cycles': total_on_off_cycles
     }
+
 def run_decision_tree_simulation(params, outdoor_temp_values, decision_tree_params, interpolation_func):
     time = []
     room_temperatures = []
     heater_on_off_cycles = 0
-
-    # Oda sıcaklığını, başlangıç oda sıcaklığı ile başlatıyoruz
     room_temperature = params['initial_room_temperature']
     heater_status = False
     heater_on_duration = 0
     heater_off_duration = params['min_off_time']
-    
-    # Karar ağacı modeli
     model = DecisionTreeRegressor(max_depth=decision_tree_params['max_depth'], min_samples_split=decision_tree_params['min_samples_split'])
 
-    # Simülasyon verisi oluşturmak için eğitim aşaması
     training_data = []
     training_labels = []
 
-    # Eğitim verisini toplamak için daha geniş bir aralıkta veri toplayın
-    for minute in np.arange(0, params['simulation_minutes'] * 10, 0.1):  # Veriyi arttırmak için daha uzun simülasyon yapıyoruz
+    for minute in np.arange(0, params['simulation_minutes'] * 10, 0.1):
         outside_temperature = get_outdoor_temp(minute, outdoor_temp_values, interpolation_func)
         heat_loss = params['base_heat_loss'] * (room_temperature - outside_temperature) / 10
 
-        # Hedef sıcaklığa (set temperature) göre ısıtıcı durumu belirlenir
-        if room_temperature < params['thermostat_setting']:
+        if room_temperature < params['thermostat_setting'] - params['thermostat_sensitivity']:
             heater_status = True
         else:
             heater_status = False
 
-        # Isıtıcı durumu ve oda sıcaklığına göre sıcaklık güncellenir
         if heater_status:
             room_temperature += params['heater_power'] * 0.1
         else:
             room_temperature -= heat_loss * 0.1
 
-        # Eğitim verilerini topluyoruz - dış sıcaklık ve mevcut sıcaklık kullanılır
         training_data.append([room_temperature, outside_temperature])
         training_labels.append(heater_status)
 
-    # Eğitim verisi toplandıktan sonra modeli eğitiyoruz
     if len(training_data) > 50:
         model.fit(training_data, training_labels)
 
-    # Gerçek simülasyon
-    # Oda sıcaklığını, başlangıç sıcaklığı ile başlatıyoruz
     room_temperature = params['initial_room_temperature']
 
     for minute in np.arange(0, params['simulation_minutes'], 0.1):
         time.append(minute)
         outside_temperature = get_outdoor_temp(minute, outdoor_temp_values, interpolation_func)
 
-        # Eğitim yapıldıktan sonra model ile tahmin yapıyoruz
         if len(training_data) > 50:
             prediction = model.predict([[room_temperature, outside_temperature]])
-            heater_status = prediction[0] > 0.5  # Isıtıcının açık mı kapalı mı olacağı tahmin edilir
+            predicted_heater_status = prediction[0] > 0.5
 
-        # Set sıcaklığa ulaşıldığında ısıtıcıyı kapat
+        if heater_status:
+            heater_on_duration += 0.1
+            heater_off_duration = 0
+        else:
+            heater_off_duration += 0.1
+            heater_on_duration = 0
+
+        if (predicted_heater_status and not heater_status and heater_off_duration >= params['min_off_time'] and 
+            room_temperature < params['thermostat_setting'] - params['thermostat_sensitivity']):
+            heater_status = True
+            heater_on_duration = 0
+            heater_on_off_cycles += 1
+
+        if (not predicted_heater_status and heater_status and heater_on_duration >= params['min_run_time'] and 
+            room_temperature > params['thermostat_setting'] + params['thermostat_sensitivity']):
+            heater_status = False
+            heater_off_duration = 0
+
         if room_temperature >= params['thermostat_setting']:
             heater_status = False
 
-        # Isıtıcı açma ve kapama mantığı (zaman kısıtlamalarıyla)
-        if heater_status and heater_off_duration >= params['min_off_time']:
-            heater_status = True
-            heater_on_duration = 0
-            heater_off_duration = 0
-            heater_on_off_cycles += 1
-
-        if not heater_status and heater_on_duration >= params['min_run_time']:
-            heater_status = False
-
-        # Oda sıcaklığı güncellenir ve aşırı ısınma kontrol edilir
         heat_loss = params['base_heat_loss'] * (room_temperature - outside_temperature) / 10
-        
+
         if heater_status:
             room_temperature += params['heater_power'] * 0.1
         else:
             room_temperature -= heat_loss * 0.1
 
-        # Aşırı ısınmayı önlemek için maksimum sıcaklık sınırı ekleyin
-        if room_temperature > params['thermostat_setting'] + params['thermostat_sensitivity']:
-            heater_status = False
-
         room_temperatures.append(room_temperature)
 
-        # Set sıcaklığına ulaşıldığında ısıtıcıyı kapat
-        if room_temperature >= params['thermostat_setting']:
-            heater_status = False
-
-    # Konfor alanları ve diğer metrikler hesaplanır
     comfort_area = calculate_area_between_temp(time, room_temperatures, params['thermostat_setting'])
     overshoot = calculate_overshoot_area(time, room_temperatures, params['thermostat_setting'])
     undershoot = calculate_undershoot_area(time, room_temperatures, params['thermostat_setting'])
+
     return {
         'time': time,
         'room_temperatures': room_temperatures,
@@ -450,6 +474,7 @@ def run_decision_tree_simulation(params, outdoor_temp_values, decision_tree_para
         'undershoot': undershoot,
         'on_off_cycles': heater_on_off_cycles
     }
+
 
 # Sonuçları İndirme Seçeneği
 def convert_results_to_csv(results):
