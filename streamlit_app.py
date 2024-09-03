@@ -6,6 +6,7 @@ from scipy.interpolate import CubicSpline
 import time
 from sklearn.tree import DecisionTreeRegressor  # Karar Ağaçları Modeli için gerekli kütüphane
 
+
 # Uygulama Başlığı ve Açıklaması
 st.set_page_config(page_title="Termostat Simülasyonu", page_icon="🌡️", layout="wide")
 st.title("Termostat Simülasyonu")
@@ -62,7 +63,7 @@ def get_simulation_parameters():
 def get_q_learning_parameters():
     st.sidebar.subheader("Q-Öğrenme Parametreleri")
     episodes = st.sidebar.number_input("Eğitim Bölümleri", min_value=10, max_value=5000, value=1000)
-    learning_rate = st.sidebar.slider("Öğrenme Oranı", min_value=0.01, max_value=1.0, value=0.1)
+    learning_rate = st.sidebar.slider("Öğrenme Oranı", min_value=0.01, max_value=1.0, value=0.5)
     discount_factor = st.sidebar.slider("İndirim Faktörü", min_value=0.01, max_value=1.0, value=0.95)
     exploration_rate = st.sidebar.slider("Keşif Oranı", min_value=0.01, max_value=1.0, value=0.1)
     return {
@@ -87,8 +88,8 @@ def get_pid_parameters():
 # Karar Ağaçları Parametreleri 
 def get_decision_tree_parameters():
     st.sidebar.subheader("Karar Ağaçları Parametreleri")
-    max_depth = st.sidebar.slider("Maksimum Derinlik", min_value=1, max_value=100, value=5)
-    min_samples_split = st.sidebar.slider("Minimum Yaprak Bölünme Sayısı", min_value=2, max_value=100, value=2)
+    max_depth = st.sidebar.slider("Maksimum Derinlik", min_value=1, max_value=25, value=5)
+    min_samples_split = st.sidebar.slider("Minimum Yaprak Bölünme Sayısı", min_value=2, max_value=25, value=2)
     return {
         'max_depth': max_depth,
         'min_samples_split': min_samples_split
@@ -98,25 +99,7 @@ def get_decision_tree_parameters():
 def get_state(temperature):
     return int(min(40, max(0, (temperature - 10) / 0.5)))
 
-def get_action(state, q_table, exploration_rate, num_actions):
-    if np.random.rand() < exploration_rate:
-        return np.random.choice(num_actions)
-    else:
-        return np.argmax(q_table[state])
-def get_reward(state, action, thermostat_setting):
-    state_temp = 10 + state * 0.5
-    # Set noktasına çok yakın sıcaklıklar için yüksek ödüller
-    if abs(state_temp - thermostat_setting) <= 0.5:
-        return 20  # Daha yüksek ödül
-    # Set noktasının üzerinde ve ısıtıcı hala çalışıyorsa çok yüksek ceza
-    elif action == 1 and state_temp > thermostat_setting:
-        return -50  # Çok yüksek ceza
-    # Set noktasının altında ve ısıtıcı kapalıysa yüksek ceza
-    elif action == 0 and state_temp < thermostat_setting:
-        return -30  # Yüksek ceza
-    # Diğer durumlarda daha düşük ödül/ceza
-    else:
-        return -1  # Hafif ceza
+
 
 
 
@@ -287,40 +270,59 @@ def run_pid_simulation(params, outdoor_temp_values, pid_params, interpolation_fu
         'on_off_cycles': heater_on_off_cycles
     }
 
+
+
+# Eylem Seçim Fonksiyonu
+def get_action(state, q_table, exploration_rate, num_actions):
+    if np.random.rand() < exploration_rate:
+        return np.random.choice(num_actions)  # Keşif yap (exploration)
+    else:
+        return np.argmax(q_table[state])  # En iyi eylemi seç (exploitation)
+
+def get_reward(state, action, thermostat_setting):
+    state_temp = 10 + state * 0.5
+    if abs(state_temp - thermostat_setting) <= 0.5:
+        return 10  # Daha yüksek ödül
+    elif action == 1 and state_temp > thermostat_setting:
+        return -10  # Daha yüksek ceza
+    elif action == 0 and state_temp < thermostat_setting:
+        return -5  # Daha yüksek ceza
+    else:
+        return -1  # Diğer durumlarda daha düşük ceza
+    
+ 
+num_states = 41
+num_actions = 2
+q_table = np.zeros((num_states, num_actions))
+# Simülasyon Mantığı (Q-Öğrenme) 
+
 def run_q_learning_simulation(params, outdoor_temp_values, q_params, interpolation_func):
-    num_states = 41
-    num_actions = 2
-    q_table = np.ones((num_states, num_actions)) * 0.1  # Tüm Q değerlerini küçük bir pozitif değerle başlat
-
+    # q_table'ı uygun şekilde başlatmalısınız
     total_on_off_cycles = 0
-
     for episode in range(q_params['episodes']):
         room_temperature = params['initial_room_temperature']
         state = get_state(room_temperature)
         heater_status = False
         heater_on_duration = 0
         heater_off_duration = params['min_off_time']
-        
-        exploration_rate = max(0.01, q_params['exploration_rate'] * (1 - episode / q_params['episodes']))  # Dinamik keşif oranı
-        
+
         for minute in np.arange(0, params['simulation_minutes'], 0.1):
             outside_temperature = get_outdoor_temp(minute, outdoor_temp_values, interpolation_func)
-            action = get_action(state, q_table, exploration_rate, num_actions)
+            exploration_rate = q_params['exploration_rate'] * (1 - episode / q_params['episodes'])
+            action = get_action(state, q_table, exploration_rate,num_actions)
 
             if heater_status:
                 heater_on_duration += 0.1
             else:
                 heater_off_duration += 0.1
 
-            if (action == 1 and not heater_status and heater_off_duration >= params['min_off_time'] and
-                room_temperature < params['thermostat_setting'] - params['thermostat_sensitivity']):
+            if action == 1 and not heater_status and heater_off_duration >= params['min_off_time']:
                 heater_status = True
                 heater_on_duration = 0
                 heater_off_duration = 0
                 total_on_off_cycles += 1
 
-            if (action == 0 and heater_status and heater_on_duration >= params['min_run_time'] and
-                room_temperature > params['thermostat_setting'] + params['thermostat_sensitivity']):
+            if action == 0 and heater_status and heater_on_duration >= params['min_run_time']:
                 heater_status = False
 
             if heater_status:
@@ -331,12 +333,12 @@ def run_q_learning_simulation(params, outdoor_temp_values, q_params, interpolati
 
             next_state = get_state(room_temperature)
             reward = get_reward(next_state, action, params['thermostat_setting'])
+
             q_table[state, action] += q_params['learning_rate'] * (
                 reward + q_params['discount_factor'] * np.max(q_table[next_state, :]) - q_table[state, action]
             )
             state = next_state
 
-    # Eğitimden sonra en iyi politikanın uygulanması
     time = []
     room_temperatures = []
     room_temperature = params['initial_room_temperature']
@@ -355,15 +357,13 @@ def run_q_learning_simulation(params, outdoor_temp_values, q_params, interpolati
         else:
             heater_off_duration += 0.1
 
-        if (action == 1 and not heater_status and heater_off_duration >= params['min_off_time'] and
-            room_temperature < params['thermostat_setting'] - params['thermostat_sensitivity']):
+        if action == 1 and not heater_status and heater_off_duration >= params['min_off_time']:
             heater_status = True
             heater_on_duration = 0
             heater_off_duration = 0
             total_on_off_cycles += 1
 
-        if (action == 0 and heater_status and heater_on_duration >= params['min_run_time'] and
-            room_temperature > params['thermostat_setting'] + params['thermostat_sensitivity']):
+        if action == 0 and heater_status and heater_on_duration >= params['min_run_time']:
             heater_status = False
 
         if heater_status:
@@ -379,7 +379,6 @@ def run_q_learning_simulation(params, outdoor_temp_values, q_params, interpolati
     comfort_area = calculate_area_between_temp(time, room_temperatures, params['thermostat_setting'])
     overshoot = calculate_overshoot_area(time, room_temperatures, params['thermostat_setting'])
     undershoot = calculate_undershoot_area(time, room_temperatures, params['thermostat_setting'])
-    
     return {
         'time': time,
         'room_temperatures': room_temperatures,
