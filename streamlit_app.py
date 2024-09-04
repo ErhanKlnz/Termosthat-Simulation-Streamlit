@@ -285,14 +285,14 @@ def get_action(state, q_table, exploration_rate, num_actions):
 
 def get_reward(state, action, thermostat_setting):
     state_temp = 10 + state * 0.5
-    if abs(state_temp - thermostat_setting) <= 0.5:
-        return 10  # Daha yüksek ödül
+    if abs(state_temp - thermostat_setting) <= 0.2:
+        return 100  # Daha yüksek ödül
     elif action == 1 and state_temp > thermostat_setting:
-        return -10  # Daha yüksek ceza
+        return -300  # Daha yüksek ceza
     elif action == 0 and state_temp < thermostat_setting:
-        return -5  # Daha yüksek ceza
+        return -200  # Daha yüksek ceza
     else:
-        return -1  # Diğer durumlarda daha düşük ceza
+        return -10  # Diğer durumlarda daha düşük ceza
     
  
 num_states = 41
