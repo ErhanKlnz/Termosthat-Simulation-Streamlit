@@ -204,6 +204,8 @@ def run_on_off_simulation(params, outdoor_temp_values, interpolation_func):
         'undershoot': undershoot,
         'on_off_cycles': heater_on_off_cycles
     }
+
+    
 def run_pid_simulation(params, outdoor_temp_values, pid_params, interpolation_func):
     time = []
     room_temperatures = []
@@ -241,12 +243,12 @@ def run_pid_simulation(params, outdoor_temp_values, pid_params, interpolation_fu
             heater_off_duration += 0.1
             heater_on_duration = 0  # Reset on duration when the heater is off
 
-        if (pid_output > 0.5 and not heater_status and heater_off_duration >= params['min_off_time']):
+        if (pid_output > 0.3 and not heater_status and heater_off_duration >= params['min_off_time']):
             heater_status = True
             heater_on_duration = 0
             heater_on_off_cycles += 1
 
-        if (pid_output < 0.1 and heater_status and heater_on_duration >= params['min_run_time']):
+        if (pid_output < 0.3 and heater_status and heater_on_duration >= params['min_run_time']):
             heater_status = False
             heater_off_duration = 0
 
@@ -285,14 +287,14 @@ def get_action(state, q_table, exploration_rate, num_actions):
 
 def get_reward(state, action, thermostat_setting):
     state_temp = 10 + state * 0.5
-    if abs(state_temp - thermostat_setting) <= 0.2:
-        return 100  # Daha yüksek ödül
+    if abs(state_temp - thermostat_setting) <= 0.3:
+        return 150  # Daha yüksek ödül
     elif action == 1 and state_temp > thermostat_setting:
-        return -300  # Daha yüksek ceza
-    elif action == 0 and state_temp < thermostat_setting:
         return -200  # Daha yüksek ceza
+    elif action == 0 and state_temp < thermostat_setting:
+        return -150  # Daha yüksek ceza
     else:
-        return -10  # Diğer durumlarda daha düşük ceza
+        return -50  # Diğer durumlarda daha düşük ceza
     
  
 num_states = 41
@@ -578,7 +580,7 @@ def run_simulations(simulation_types, outdoor_temp_values, sim_params, q_params=
     ax6.set_title('Termostat Açma-Kapama Döngü Sayısı', fontsize=14)
     ax6.set_ylabel('Döngü Sayısı', fontsize=12)
     st.pyplot(fig6)
-
+    
 # Main Execution 
 if __name__ == "__main__":
     with st.sidebar:
