@@ -4,5 +4,4 @@ scipy
 pandas
 numpy
 seaborn
-sklearn
 scikit-learn
