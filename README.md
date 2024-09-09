@@ -45,3 +45,6 @@ Bu Streamlit uygulaması, oda sıcaklığını korumak amacıyla çeşitli kontr
 2. **Kurulum**:
    ```bash
    pip install -r requirements.txt
+
+# Proje Hakkında
+Bu proje, farklı kontrol algoritmalarının performanslarını analiz etmek isteyen araştırmacılar, mühendisler ve meraklılar için tasarlanmıştır. Uygulama, oda sıcaklığı kontrolü üzerindeki etkilerini anlamada kullanıcıya yardımcı olur. Performans değerlendirmeleri, her algoritmanın hangi koşullar altında daha iyi çalıştığını ortaya koyar.
