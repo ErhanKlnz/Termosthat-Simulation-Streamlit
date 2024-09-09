@@ -543,7 +543,7 @@ def run_simulations(simulation_types, outdoor_temp_values, sim_params, q_params=
 
     fig3, ax3 = plt.subplots(figsize=(6, 3))
     total_overshoot_undershoot = {algo: results[algo]['overshoot'] + results[algo]['undershoot'] for algo in labels}
-    ax3.bar(total_overshoot_undershoot.keys(), total_overshoot_undershoot.values(), color=['skyblue', 'green', 'lightcoral'])
+    ax3.bar(total_overshoot_undershoot.keys(), total_overshoot_undershoot.values(), color=['steelblue', 'lightsteelblue', 'mediumseagreen', 'palegreen'])
     ax3.set_title('Toplam Aşım ve Alt Geçiş Karşılaştırması', fontsize=14)
     ax3.set_ylabel('Toplam Alan (°C*dakika)', fontsize=12) 
     st.write("### Toplam Aşım ve Alt Geçiş Karşılaştırması")
@@ -576,7 +576,7 @@ def run_simulations(simulation_types, outdoor_temp_values, sim_params, q_params=
     fig6, ax6 = plt.subplots(figsize=(10, 6))
     labels = list(results.keys())
     on_off_cycles = [results[algo]['on_off_cycles'] for algo in labels]
-    ax6.bar(labels, on_off_cycles, color='blue')
+    ax6.bar(labels, on_off_cycles, color=['steelblue', 'lightsteelblue', 'mediumseagreen', 'palegreen'])
     ax6.set_title('Termostat Açma-Kapama Döngü Sayısı', fontsize=14)
     ax6.set_ylabel('Döngü Sayısı', fontsize=12)
     st.pyplot(fig6)
