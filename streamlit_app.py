@@ -5,15 +5,8 @@ import numpy as np
 from scipy.interpolate import CubicSpline
 import time
 from sklearn.tree import DecisionTreeRegressor  # Karar Ağaçları Modeli için gerekli kütüphane
-
-
-# Uygulama Başlığı ve Açıklaması
-st.set_page_config(page_title="Termostat Simülasyonu", page_icon="🌡️", layout="wide")
-st.title("Termostat Simülasyonu")
-st.subheader("Kontrol Algoritmalarının Karşılaştırılması")
-st.write("Bu interaktif simülasyon, oda sıcaklığını korumak için farklı kontrol algoritmalarının performansını karşılaştırır.")
-
-# Dosya Yükleyici ve Hata Kontrolü
+import time
+# Veri Yükleme Fonksiyonu ve Tarih/Saat Kontrolü
 def load_data():
     uploaded_file = st.file_uploader("Bir CSV dosyası seçin (Dış Ortam Sıcaklığı verilerini içeren)", type="csv")
     if uploaded_file is not None:
@@ -25,8 +18,47 @@ def load_data():
             if df.isnull().values.any():
                 st.error("CSV dosyasında eksik değerler var. Lütfen düzeltin ve tekrar yükleyin.")
                 return None
-            outdoor_temp_values = df['Outdoor Temp (C)'].values  
-            return outdoor_temp_values
+
+            # Tarih ve Saat Sütunlarının Kontrolü
+            if 'Date' in df.columns and 'Time' in df.columns:
+                # Günlük Ortalama Sıcaklıkları Hesaplama ve Gösterme
+                df['Date'] = pd.to_datetime(df['Date'])
+                daily_avg_temps = df.groupby(df['Date'].dt.date)['Outdoor Temp (C)'].mean()
+
+                # Grafik Oluşturma
+                fig, ax = plt.subplots(figsize=(10, 6))
+                ax.plot(daily_avg_temps.index, daily_avg_temps.values, marker='o', linestyle='-', color='b')
+                ax.set_title('Günlük Ortalama Dış Sıcaklık (°C)', fontsize=16)
+                ax.set_xlabel('Tarih', fontsize=14)
+                ax.set_ylabel('Ortalama Sıcaklık (°C)', fontsize=14)
+                ax.grid(True)
+
+                st.pyplot(fig)
+
+                # Tarih ve saat sütunlarını birleştirip datetime formatına çeviriyoruz
+                df['DateTime'] = pd.to_datetime(df['Date'].astype(str) + ' ' + df['Time'])
+                st.success("Veri başarıyla yüklendi! Şimdi bir başlangıç tarihi ve saati seçin.")
+
+                # Başlangıç Tarih ve Saat Seçimi
+                start_date = st.date_input("Başlangıç Tarihini Seçin", min_value=df['DateTime'].min().date(), max_value=df['DateTime'].max().date())
+                start_time = st.time_input("Başlangıç Saatini Seçin", value=pd.Timestamp('00:00').time())
+
+                # Seçilen Tarih ve Saatten Sonraki Verileri Filtreleme
+                start_datetime = pd.to_datetime(f"{start_date} {start_time}")
+                df_filtered = df[df['DateTime'] >= start_datetime]
+
+                # Filtrelenmiş Veriyi Döndürme
+                if df_filtered.empty:
+                    st.error("Seçilen tarih ve saatten sonraki veri seti boş. Lütfen farklı bir tarih/saat seçin.")
+                    return None
+                else:
+                    outdoor_temp_values = df_filtered['Outdoor Temp (C)'].values
+                    return outdoor_temp_values
+            else:
+                st.warning("Veri setinde 'Date' ve 'Time' sütunları bulunamadı. Tüm veriler kullanılacak.")
+                outdoor_temp_values = df['Outdoor Temp (C)'].values  
+                return outdoor_temp_values
+
         except pd.errors.EmptyDataError:
             st.error("Yüklenen CSV dosyası boş. Lütfen geçerli bir dosya yükleyin.")
             return None
@@ -36,6 +68,7 @@ def load_data():
     else:
         st.warning("Lütfen devam etmek için bir CSV dosyası yükleyin.")
         return None
+
 
 # Simülasyon Parametreleri 
 def get_simulation_parameters():
