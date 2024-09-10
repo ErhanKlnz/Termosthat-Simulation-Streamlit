@@ -102,9 +102,9 @@ def get_simulation_parameters():
     heater_power = st.sidebar.slider("Isıtıcı Gücü (°C/dakika)", min_value=0.1, max_value=0.5, value=0.3)
     base_heat_loss = st.sidebar.slider("Temel Isı Kaybı (°C/dakika)", min_value=0.05, max_value=0.2, value=0.1)
     simulation_minutes = st.sidebar.number_input("Simülasyon Süresi (Dakika)", min_value=10, max_value=43200, value=60)
-    thermostat_sensitivity = st.sidebar.slider("Termostat Hassasiyeti (°C)", min_value=0.1, max_value=0.5, value=0.5, step=0.1)
-    min_run_time = st.sidebar.number_input("Minimum Çalışma Süresi (Dakika)", min_value=0.2, max_value=1000.0, value=1.0, step=0.1)
-    min_off_time = st.sidebar.number_input("Minimum Kapalı Kalma Süresi (Dakika)", min_value=0.2, max_value=1000.0, value=1.0, step=0.1)
+    thermostat_sensitivity = st.sidebar.slider("Termostat Hassasiyeti (°C)", min_value=0.1, max_value=0.5, value=0.3, step=0.1)
+    min_run_time = st.sidebar.number_input("Termostatın Minimum Çalışma Süresi (Dakika)", min_value=0.2, max_value=1000.0, value=1.0, step=0.1)
+    min_off_time = st.sidebar.number_input("Termostatın Minimum Kapalı Kalma Süresi (Dakika)", min_value=0.2, max_value=1000.0, value=1.0, step=0.1)
     return {
         'initial_room_temperature': initial_room_temperature,
         'thermostat_setting': thermostat_setting,
