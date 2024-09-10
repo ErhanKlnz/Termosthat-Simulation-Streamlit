@@ -18,13 +18,7 @@ Bu interaktif uygulama, odadaki sıcaklığı korumak için farklı kontrol algo
 - `scipy`
 - `sklearn`
 
-### Kurulum
 
-Uygulamayı çalıştırmak için gerekli paketleri yükleyin:
-
-```bash
-pip install streamlit pandas numpy matplotlib scipy scikit-learn
-# 🌡️ Termostat Simülasyonu
 
 Bu interaktif uygulama, odadaki sıcaklığı korumak için farklı kontrol algoritmalarının (Açma-Kapama, PID, Q-Öğrenme, Karar Ağaçları) performansını karşılaştırmanızı sağlar. Simülasyon, dış ortam sıcaklığı verileri ile çalışır ve kullanıcıların belirlediği parametrelere göre oda sıcaklığını düzenlemek için kullanılan çeşitli algoritmaları test eder.
 
