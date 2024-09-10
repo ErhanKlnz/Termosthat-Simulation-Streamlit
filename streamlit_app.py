@@ -6,6 +6,16 @@ from scipy.interpolate import CubicSpline
 import time
 from sklearn.tree import DecisionTreeRegressor  # Karar Ağaçları Modeli için gerekli kütüphane
 import time
+
+
+# Uygulama Başlığı ve Açıklaması
+st.set_page_config(page_title="Termostat Simülasyonu", page_icon="🌡️", layout="wide")
+st.title("Termostat Simülasyonu")
+st.subheader("Kontrol Algoritmalarının Karşılaştırılması")
+st.write("Bu interaktif simülasyon, oda sıcaklığını korumak için farklı kontrol algoritmalarının performansını karşılaştırır.")
+
+# Dosya Yükleyici ve Hata Kontrolü
+
 # Veri Yükleme Fonksiyonu ve Tarih/Saat Kontrolü
 def load_data():
     uploaded_file = st.file_uploader("Bir CSV dosyası seçin (Dış Ortam Sıcaklığı verilerini içeren)", type="csv")
