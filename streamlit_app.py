@@ -5,8 +5,6 @@ import numpy as np
 from scipy.interpolate import CubicSpline
 import time
 from sklearn.tree import DecisionTreeRegressor  # Karar Ağaçları Modeli için gerekli kütüphane
-import time
-
 
 # Uygulama Başlığı ve Açıklaması
 st.set_page_config(page_title="Termostat Simülasyonu", page_icon="🌡️", layout="wide")
@@ -16,9 +14,8 @@ st.write("Bu interaktif simülasyon, oda sıcaklığını korumak için farklı 
 
 # Dosya Yükleyici ve Hata Kontrolü
 
-# Veri Yükleme Fonksiyonu ve Tarih/Saat Kontrolü
 def load_data():
-    uploaded_file = st.file_uploader("Bir CSV dosyası seçin (Dış Ortam Sıcaklığı verilerini içeren)", type="csv")
+    uploaded_file = st.file_uploader("Bir CSV dosyası seçin (Dış Ortam Sıcaklığı ve sutün adı 'Outdoor Temp (C)' olan verilerini içeren)", type="csv")
     if uploaded_file is not None:
         try:
             df = pd.read_csv(uploaded_file)
@@ -31,16 +28,28 @@ def load_data():
 
             # Tarih ve Saat Sütunlarının Kontrolü
             if 'Date' in df.columns and 'Time' in df.columns:
-                # Günlük Ortalama Sıcaklıkları Hesaplama ve Gösterme
+                # Günlük Minimum, Maksimum ve Ortalama Sıcaklıkları Hesaplama
                 df['Date'] = pd.to_datetime(df['Date'])
-                daily_avg_temps = df.groupby(df['Date'].dt.date)['Outdoor Temp (C)'].mean()
+                daily_stats = df.groupby(df['Date'].dt.date).agg(
+                    daily_avg=('Outdoor Temp (C)', 'mean'),
+                    daily_min=('Outdoor Temp (C)', 'min'),
+                    daily_max=('Outdoor Temp (C)', 'max')
+                )
 
-                # Grafik Oluşturma
+                # Grafik Oluşturma: Ortalama, Min ve Max Sıcaklıkları Gösterme
                 fig, ax = plt.subplots(figsize=(10, 6))
-                ax.plot(daily_avg_temps.index, daily_avg_temps.values, marker='o', linestyle='-', color='b')
-                ax.set_title('Günlük Ortalama Dış Sıcaklık (°C)', fontsize=16)
+
+                # Ortalama sıcaklık
+                ax.plot(daily_stats.index, daily_stats['daily_avg'], marker='o', linestyle='-', color='mediumseagreen', label='Ortalama Sıcaklık')
+
+                # Min-Max aralığını çiz
+                ax.fill_between(daily_stats.index, daily_stats['daily_min'], daily_stats['daily_max'], color='gray', alpha=0.3, label='Min-Max Aralığı')
+
+                # Grafik etiketleri
+                ax.set_title('Günlük Ortalama ve Min-Max Dış Sıcaklık (°C)', fontsize=16)
                 ax.set_xlabel('Tarih', fontsize=14)
-                ax.set_ylabel('Ortalama Sıcaklık (°C)', fontsize=14)
+                ax.set_ylabel('Sıcaklık (°C)', fontsize=14)
+                ax.legend()
                 ax.grid(True)
 
                 st.pyplot(fig)
@@ -78,7 +87,6 @@ def load_data():
     else:
         st.warning("Lütfen devam etmek için bir CSV dosyası yükleyin.")
         return None
-
 
 # Simülasyon Parametreleri 
 def get_simulation_parameters():
