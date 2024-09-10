@@ -1,28 +1,75 @@
-# Oda Sıcaklığı Kontrolü İçin Simülasyon Uygulaması
+# 🌡️ Termostat Simülasyonu
 
-Bu Streamlit uygulaması, oda sıcaklığını korumak amacıyla çeşitli kontrol algoritmalarının (Açma-Kapama, PID ve Q-Öğrenme) performansını karşılaştırmak için tasarlanmıştır. Uygulama, kullanıcıların farklı simülasyon parametreleri girerek bu algoritmaların sonuçlarını görselleştirmesine ve analiz etmesine olanak tanır.
+Bu interaktif uygulama, odadaki sıcaklığı korumak için farklı kontrol algoritmalarının (Açma-Kapama, PID, Q-Öğrenme, Karar Ağaçları) performansını karşılaştırmanızı sağlar. Simülasyon, dış ortam sıcaklığı verileri ile çalışır ve kullanıcıların belirlediği parametrelere göre oda sıcaklığını düzenlemek için kullanılan çeşitli algoritmaları test eder.
 
 ## Özellikler
 
-- **Veri Yükleme ve Doğrulama**: Kullanıcıdan dış ortam sıcaklığı verilerini içeren bir CSV dosyası yüklemesi istenir. Dosya doğrulanır ve eksik değerler veya hatalar için kullanıcıya uyarılar verilir. Alternatif olarak, kullanıcı kübik spline interpolasyonu kullanarak dış ortam sıcaklıklarını manuel olarak girebilir.
-  
-- **Simülasyon Parametreleri**: 
-  - Başlangıç oda sıcaklığı
-  - Termostat ayarı
-  - Isıtıcı gücü
-  - Temel ısı kaybı
-  - Simülasyon süresi
-  - PID ve Q-Öğrenme algoritmaları için ayrı parametreler
+- Farklı kontrol algoritmaları ile oda sıcaklığını kontrol edin
+- Dış ortam sıcaklığına göre algoritmaların performansını analiz edin
+- Farklı simülasyon parametreleri ile deneyler yapın
+- Simülasyon sonuçlarını görsel ve CSV formatında inceleyin
 
-- **Simülasyonları Çalıştırma**:
-  - **Açma-Kapama Kontrolü**: Isıtıcıyı açma-kapama mantığına dayalı olarak çalıştırır ve oda sıcaklığını kontrol eder.
-  - **PID Kontrolü**: Proportional, Integral ve Derivative terimlerini hesaplayarak ısıtıcıya uygulanan gücü ayarlar.
-  - **Q-Öğrenme**: Q-öğrenme algoritması kullanarak oda sıcaklığını kontrol eder. Eğitim süreci sonunda öğrenilen politika ile simülasyon gerçekleştirilir.
+## Gereksinimler
 
-- **Sonuçların Görselleştirilmesi**: 
-  - Oda sıcaklığı, termostat ayarı ve kontrol algoritmalarının performansını karşılaştıran grafikler
-  - Konfor ve enerji metrikleri için bar grafikleri
-  - Tüm sonuçlar CSV formatında indirilebilir
+- `streamlit`
+- `pandas`
+- `numpy`
+- `matplotlib`
+- `scipy`
+- `sklearn`
+
+### Kurulum
+
+Uygulamayı çalıştırmak için gerekli paketleri yükleyin:
+
+```bash
+pip install streamlit pandas numpy matplotlib scipy scikit-learn
+# 🌡️ Termostat Simülasyonu
+
+Bu interaktif uygulama, odadaki sıcaklığı korumak için farklı kontrol algoritmalarının (Açma-Kapama, PID, Q-Öğrenme, Karar Ağaçları) performansını karşılaştırmanızı sağlar. Simülasyon, dış ortam sıcaklığı verileri ile çalışır ve kullanıcıların belirlediği parametrelere göre oda sıcaklığını düzenlemek için kullanılan çeşitli algoritmaları test eder.
+
+## Veri Yükleme
+
+Simülasyonu çalıştırmadan önce dış ortam sıcaklık verilerini içeren bir CSV dosyası yüklemeniz gerekir. Veride aşağıdaki sütunlar bulunmalıdır:
+
+- **Date**: Tarih (günlük veri formatında)
+- **Time**: Saat (zaman formatında)
+- **Outdoor Temp (C)**: Dış ortam sıcaklık değerleri (Celsius)
+
+Veri yüklendikten sonra, grafik üzerinde günlük ortalama, minimum ve maksimum sıcaklıklar gösterilir. Bu grafik, dış ortam sıcaklığındaki günlük değişimleri incelemenizi sağlar.
+
+## Simülasyon Parametreleri
+
+Simülasyonun nasıl çalışacağını belirlemek için bir dizi parametreyi ayarlayabilirsiniz. Bu parametreler, algoritmanın çalışma şeklini ve performansını doğrudan etkiler.
+
+| Parametre                       | Açıklama                                                                                                                                                    |
+|----------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Başlangıç Oda Sıcaklığı (°C)** | Simülasyonun başlangıcında odanın sıcaklığını belirler. Örneğin, 19°C olarak ayarlanmışsa, simülasyon başladığında oda sıcaklığı 19°C olacaktır.             |
+| **Termostat Ayarı (°C)**         | Termostatın hedef sıcaklık ayarını belirler. Termostat, odayı bu sıcaklıkta tutmaya çalışacaktır. Örneğin, 20°C olarak ayarlanmışsa, algoritmalar odayı 20°C'de tutmaya çalışacaktır. |
+| **Isıtıcı Gücü (°C/dakika)**     | Isıtıcının odadaki sıcaklığı dakikada ne kadar artıracağını belirler. Isıtıcı devreye girdiğinde, oda sıcaklığı bu hızla artar.                              |
+| **Temel Isı Kaybı (°C/dakika)**  | Odanın dış ortam sıcaklığının etkisiyle ne kadar hızla soğuyacağını belirler. Dış ortam sıcaklığı daha düşükse oda daha hızlı soğur.                         |
+| **Simülasyon Süresi (Dakika)**   | Simülasyonun ne kadar süre boyunca çalışacağını belirler. Örneğin, 60 dakika olarak ayarlanırsa, simülasyon bu süre boyunca çalışacaktır.                   |
+| **Termostat Hassasiyeti (°C)**   | Termostatın sıcaklık değişimlerine ne kadar hassas olduğunu belirler. Termostat, bu değerin altına düştüğünde ısıtıcıyı açar, üstüne çıktığında ise kapatır. |
+| **Minimum Çalışma Süresi (Dakika)** | Isıtıcının açıldığında en az ne kadar süre çalışması gerektiğini belirler. Bu parametre, gereksiz yere sık açılıp kapanmayı önlemek için kullanılır. Örneğin, 1 dakika olarak ayarlanırsa, ısıtıcı açıldıktan sonra en az 1 dakika boyunca çalışmak zorundadır. Bu, ısıtıcıların çok sık açılıp kapanmasını ve enerji israfını önlemeye yardımcı olur.|
+| **Minimum Kapalı Kalma Süresi (Dakika)** | Isıtıcının kapandığında ne kadar süre kapalı kalması gerektiğini belirler. Isıtıcı kapandıktan sonra, belirlenen süre dolmadan tekrar çalışamaz. Bu parametre de gereksiz yere sık devreye girip çıkmayı engeller. Örneğin, 1 dakika olarak ayarlanmışsa, ısıtıcı kapandıktan sonra en az 1 dakika kapalı kalır. |
+
+## Kontrol Algoritmaları
+
+Simülasyon sırasında dört farklı kontrol algoritmasını seçip karşılaştırabilirsiniz:
+
+- **Açma-Kapama (On-Off)**: En basit kontrol algoritmasıdır. Oda sıcaklığı, termostat ayarının altına düştüğünde ısıtıcı açılır, sıcaklık ayarın üzerine çıktığında ısıtıcı kapanır. Bu yöntem hızlı sonuç verir, ancak sık sık açma-kapama döngüsüne girme eğilimindedir.
+
+- **PID (Proportional-Integral-Derivative)**: Daha gelişmiş bir algoritmadır. Sıcaklık farkını (P), zaman içinde birikmiş hatayı (I) ve sıcaklık değişim hızını (D) göz önünde bulundurarak odayı kademeli ve daha stabil bir şekilde istenen sıcaklıkta tutar. Dalgalanmayı en aza indirir.
+
+- **Q-Öğrenme**: Makine öğrenimi tabanlı bir algoritmadır. Bu algoritma, sıcaklık kontrolünü öğrenmek için zamanla kendini optimize eder. Deneme-yanılma yöntemiyle hangi durumda hangi eylemin en iyi olduğunu öğrenir.
+
+- **Karar Ağaçları**: Makine öğrenimine dayalı bir yöntemdir. Geçmiş sıcaklık verilerini kullanarak odadaki sıcaklığı kontrol etmek için hangi kararların alınacağını belirler. Veri tabanlı bir yaklaşımla çalışır.
+
+## Sonuçların Analizi
+
+Simülasyon sonuçları bir grafik ile gösterilir. Bu grafik, odadaki sıcaklık değişimlerini ve seçilen algoritmanın performansını gözler önüne serer. Simülasyon sırasında kaç defa ısıtıcının açılıp kapandığını, oda sıcaklığının ne kadar stabilleştiğini ve termostatın ne kadar verimli çalıştığını gözlemleyebilirsiniz.
+
+Simülasyon sonuçlarını CSV dosyası olarak indirebilir ve daha ayrıntılı analizler yapabilirsiniz.
 
 ## Uygulama Ekran Görüntüleri
 
