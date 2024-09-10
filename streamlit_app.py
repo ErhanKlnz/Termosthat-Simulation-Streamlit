@@ -9,6 +9,12 @@ from sklearn.tree import DecisionTreeRegressor  # Karar Ağaçları Modeli için
 # Uygulama Başlığı ve Açıklaması
 st.set_page_config(page_title="Termostat Simülasyonu", page_icon="🌡️", layout="wide")
 st.title("Termostat Simülasyonu")
+
+st.markdown("""
+### Termostat Simülasyonu Hakkında
+Bu uygulama ile oda sıcaklığını farklı kontrol algoritmaları ile simüle edebilirsiniz. Detaylı bilgi için [GitHub README.md dosyasına göz atın](https://github.com/ErhanKlnz/termostat_sim).
+""")
+
 st.subheader("Kontrol Algoritmalarının Karşılaştırılması")
 st.write("Bu interaktif simülasyon, oda sıcaklığını korumak için farklı kontrol algoritmalarının performansını karşılaştırır.")
 
