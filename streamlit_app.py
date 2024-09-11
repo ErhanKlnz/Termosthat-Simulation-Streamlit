@@ -116,6 +116,7 @@ def get_simulation_parameters():
         'min_off_time': min_off_time
     }
 
+
 # Q-Öğrenme Parametreleri 
 def get_q_learning_parameters():
     st.sidebar.subheader("Q-Öğrenme Parametreleri")
@@ -152,11 +153,9 @@ def get_decision_tree_parameters():
         'min_samples_split': min_samples_split
     }
 
-# Yardımcı Fonksiyonlar 
 def get_state(temperature):
     return int(min(40, max(0, (temperature - 10) / 0.5)))
 
-# Dış Ortam Sıcaklığı Seçimi ve İnterpolasyon
 def get_outdoor_temperature_data():
     data_source = st.sidebar.radio("Dış Ortam Sıcaklığı Veri Kaynağı", ["CSV Dosyası", "İnterpolasyon (Kübik Spline)"])
     if data_source == "CSV Dosyası":
@@ -184,7 +183,6 @@ def get_outdoor_temp(minute, outdoor_temp_values, interpolation_func):
         hour = minute / 60
         return float(interpolation_func(hour))
 
-# Alan Hesaplama Fonksiyonları
 def calculate_area_between_temp(time, room_temperatures, set_temp):
     area = 0
     for i in range(1, len(time)):
@@ -210,6 +208,11 @@ def calculate_undershoot_area(time, room_temperatures, set_temp):
         if avg_temp < set_temp:
             undershoot += (set_temp - avg_temp) * dt
     return undershoot
+
+def calculate_heat_loss(room_temperature, outside_temperature, base_heat_loss):
+
+    return base_heat_loss * (room_temperature - outside_temperature) / 10
+
 
 def run_on_off_simulation(params, outdoor_temp_values, interpolation_func):
     time = []
@@ -240,7 +243,8 @@ def run_on_off_simulation(params, outdoor_temp_values, interpolation_func):
               heater_status and heater_on_duration >= params['min_run_time']):
             heater_status = False
 
-        heat_loss = params['base_heat_loss'] * (room_temperature - outside_temperature) / 10
+        heat_loss = calculate_heat_loss(room_temperature, outside_temperature, params['base_heat_loss'])
+
 
         if heater_status:
             room_temperature += params['heater_power'] * 0.1
@@ -277,32 +281,26 @@ def run_pid_simulation(params, outdoor_temp_values, pid_params, interpolation_fu
 
     for minute in np.arange(0, params['simulation_minutes'], 0.1):
         time.append(minute)
-        outside_temperature = get_outdoor_temp(minute, outdoor_temp_values, interpolation_func)
-
-        # PID Control calculations
-        error = params['thermostat_setting'] - room_temperature
-
-        # Hassasiyet kontrolü: Hata küçükse, PID kontrolü devreye girmez
+        outside_temperature = get_outdoor_temp(minute, outdoor_temp_values, interpolation_func) 
+        error = params['thermostat_setting'] - room_temperature   
         if abs(error) <= params['thermostat_sensitivity']:
             error = 0
-
         proportional_term = pid_params['Kp'] * error
         integral_error += error * 0.1
         integral_term = pid_params['Ki'] * integral_error
         derivative_term = pid_params['Kd'] * (error - previous_error) / 0.1
         previous_error = error
-
         pid_output = proportional_term + integral_term + derivative_term
         pid_output = max(0, min(pid_output, 1))
         heater_output.append(pid_output)
 
-        # Update heater status based on PID output and min_run_time / min_off_time constraints
+        
         if heater_status:
             heater_on_duration += 0.1
-            heater_off_duration = 0  # Reset off duration when the heater is on
+            heater_off_duration = 0  
         else:
             heater_off_duration += 0.1
-            heater_on_duration = 0  # Reset on duration when the heater is off
+            heater_on_duration = 0  
 
         if (pid_output > 0.3 and not heater_status and heater_off_duration >= params['min_off_time']):
             heater_status = True
@@ -311,12 +309,9 @@ def run_pid_simulation(params, outdoor_temp_values, pid_params, interpolation_fu
 
         if (pid_output < 0.3 and heater_status and heater_on_duration >= params['min_run_time']):
             heater_status = False
-            heater_off_duration = 0
-
-        # Calculate heat loss
-        heat_loss = params['base_heat_loss'] * (room_temperature - outside_temperature) / 10
-
-        # Update room temperature based on heater status and heat loss
+            heater_off_duration = 0 
+        heat_loss = calculate_heat_loss(room_temperature, outside_temperature, params['base_heat_loss'])
+        
         if heater_status:
             room_temperature += params['heater_power'] * 0.1
         else:
@@ -337,7 +332,6 @@ def run_pid_simulation(params, outdoor_temp_values, pid_params, interpolation_fu
         'on_off_cycles': heater_on_off_cycles
     }
 
-# Eylem Seçim Fonksiyonu
 def get_action(state, q_table, exploration_rate, num_actions):
     if np.random.rand() < exploration_rate:
         return np.random.choice(num_actions)  # Keşif yap (exploration)
@@ -347,14 +341,13 @@ def get_action(state, q_table, exploration_rate, num_actions):
 def get_reward(state, action, thermostat_setting, thermostat_sensitivity):
     state_temp = 10 + state * 0.5
     if abs(state_temp - thermostat_setting) <= thermostat_sensitivity:
-        return 150  # Daha yüksek ödül
+        return 15  # Daha yüksek ödül
     elif action == 1 and state_temp > thermostat_setting:
-        return -100  # Daha yüksek ceza
+        return -10 # Daha yüksek ceza
     elif action == 0 and state_temp < thermostat_setting:
-        return -100  # Daha yüksek ceza
+        return -10  # Daha yüksek ceza
     else:
-        return -50  # Diğer durumlarda daha düşük ceza
-    
+        return -5  # Diğer durumlarda daha düşük ceza    
  
 num_states = 41
 num_actions = 2
@@ -393,12 +386,11 @@ def run_q_learning_simulation(params, outdoor_temp_values, q_params, interpolati
             if heater_status:
                 room_temperature += params['heater_power'] * 0.1
             else:
-                heat_loss = params['base_heat_loss'] * (room_temperature - outside_temperature) / 10
+                heat_loss = calculate_heat_loss(room_temperature, outside_temperature, params['base_heat_loss'])
                 room_temperature -= heat_loss * 0.1
 
             next_state = get_state(room_temperature)
             reward = get_reward(next_state, action, params['thermostat_setting'], params['thermostat_sensitivity'])
-
 
             q_table[state, action] += q_params['learning_rate'] * (
                 reward + q_params['discount_factor'] * np.max(q_table[next_state, :]) - q_table[state, action]
@@ -435,7 +427,7 @@ def run_q_learning_simulation(params, outdoor_temp_values, q_params, interpolati
         if heater_status:
             room_temperature += params['heater_power'] * 0.1
         else:
-            heat_loss = params['base_heat_loss'] * (room_temperature - outside_temperature) / 10
+            heat_loss = calculate_heat_loss(room_temperature, outside_temperature, params['base_heat_loss'])
             room_temperature -= heat_loss * 0.1
 
         state = get_state(room_temperature)
@@ -469,7 +461,7 @@ def run_decision_tree_simulation(params, outdoor_temp_values, decision_tree_para
 
     for minute in np.arange(0, params['simulation_minutes'] * 10, 0.1):
         outside_temperature = get_outdoor_temp(minute, outdoor_temp_values, interpolation_func)
-        heat_loss = params['base_heat_loss'] * (room_temperature - outside_temperature) / 10
+        heat_loss = calculate_heat_loss(room_temperature, outside_temperature, params['base_heat_loss'])
 
         if room_temperature < params['thermostat_setting'] - params['thermostat_sensitivity']:
             heater_status = True
@@ -518,7 +510,7 @@ def run_decision_tree_simulation(params, outdoor_temp_values, decision_tree_para
         if room_temperature >= params['thermostat_setting']:
             heater_status = False
 
-        heat_loss = params['base_heat_loss'] * (room_temperature - outside_temperature) / 10
+        heat_loss = calculate_heat_loss(room_temperature, outside_temperature, params['base_heat_loss'])
 
         if heater_status:
             room_temperature += params['heater_power'] * 0.1
@@ -539,20 +531,53 @@ def run_decision_tree_simulation(params, outdoor_temp_values, decision_tree_para
         'undershoot': undershoot,
         'on_off_cycles': heater_on_off_cycles
     }
-
-
-# Sonuçları İndirme Seçeneği
-def convert_results_to_csv(results):
+def convert_results_to_energy_comparison_csv(results, params):
+    import pandas as pd
     data = []
+    energy_comparison = {}
+
+    # Simülasyon parametrelerini CSV'ye ekleyecek veri formatı
+    param_data = [
+        {'Parametreler': 'Başlangıç Oda Sıcaklığı (°C)', 'Değer': params['initial_room_temperature']},
+        {'Parametreler': 'Termostat Ayarı (°C)', 'Değer': params['thermostat_setting']},
+        {'Parametreler': 'Isıtıcı Gücü (°C/dakika)', 'Değer': params['heater_power']},
+        {'Parametreler': 'Temel Isı Kaybı (°C/dakika)', 'Değer': params['base_heat_loss']},
+        {'Parametreler': 'Simülasyon Süresi (Dakika)', 'Değer': params['simulation_minutes']},
+        {'Parametreler': 'Termostat Hassasiyeti (°C)', 'Değer': params['thermostat_sensitivity']},
+        {'Parametreler': 'Minimum Çalışma Süresi (Dakika)', 'Değer': params['min_run_time']},
+        {'Parametreler': 'Minimum Kapalı Kalma Süresi (Dakika)', 'Değer': params['min_off_time']}
+    ]
+
+    # Sonuçları CSV için hazırlama
     for algo, result in results.items():
-        for i in range(len(result['time'])):
-            data.append({
-                'Algoritma': algo,
-                'Zaman (dakika)': result['time'][i],
-                'Oda Sıcaklığı (°C)': result['room_temperatures'][i]
-            })
-    df = pd.DataFrame(data)
-    return df.to_csv(index=False).encode('utf-8')
+        overshoot = result['overshoot']  # Toplam aşım
+        undershoot = result['undershoot']  # Toplam alt geçiş
+        total_energy = overshoot + undershoot
+        energy_comparison[algo] = total_energy
+
+        # Sonuçları kaydediyoruz
+        data.append({
+            'Algoritma': algo,
+            'Toplam Aşım (Overshoot)': f'"{overshoot:.2f}"',
+            'Toplam Alt Geçiş (Undershoot)': f'"{undershoot:.2f}"',
+            'Toplam Enerji Tüketimi': f'"{total_energy:.2f}"'
+        })
+
+    # En verimli algoritmayı bulma
+    min_energy_algo = min(energy_comparison, key=energy_comparison.get)
+    min_energy_value = energy_comparison[min_energy_algo]
+
+    # Yüzdesel karşılaştırma ekle
+    for i, algo in enumerate(energy_comparison):
+        data[i]['Yüzdesel Enerji Tüketimi (%)'] = f'"{(energy_comparison[algo] / min_energy_value) * 100:.2f}"'
+
+    # Simülasyon parametrelerini ve sonuçları birleştirip DataFrame'e çevirme
+    param_df = pd.DataFrame(param_data)
+    result_df = pd.DataFrame(data)
+
+    # İki tabloyu birleştirip CSV olarak kaydetme
+    combined_df = pd.concat([param_df, result_df], ignore_index=True)
+    return combined_df.to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8-sig')
 
 # Ana Çalıştırma Fonksiyonu 
 def run_simulations(simulation_types, outdoor_temp_values, sim_params, q_params=None, pid_params=None, decision_tree_params=None, interpolation_func=None):
@@ -566,8 +591,8 @@ def run_simulations(simulation_types, outdoor_temp_values, sim_params, q_params=
     if "Karar Ağaçları" in simulation_types:
         results["Karar Ağaçları"] = run_decision_tree_simulation(sim_params, outdoor_temp_values, decision_tree_params, interpolation_func)
 
-    csv = convert_results_to_csv(results)
-    st.download_button("Sonuçları CSV Olarak İndir", csv, "simulasyon_sonuclari.csv", "text/csv")
+    csv = convert_results_to_energy_comparison_csv(results, sim_params)
+    st.download_button("Sonuçları CSV Olarak İndir", csv, "energy_comparison_results.csv", "text/csv")
 
     fig1, ax1 = plt.subplots(figsize=(10, 6))
     plt.style.use('ggplot')
@@ -668,7 +693,7 @@ if __name__ == "__main__":
         if results:
             st.download_button(
                 label="Sonuçları İndir (CSV)",
-                data=convert_results_to_csv(results),
+                data=convert_results_to_energy_comparison_csv(results,sim_params),
                 file_name='simulation_results.csv',
                 mime='text/csv',
             )
