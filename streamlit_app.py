@@ -342,9 +342,9 @@ def get_action(state, q_table, exploration_rate, num_actions):
     else:
         return np.argmax(q_table[state])  # En iyi eylemi seç (exploitation)
 
-def get_reward(state, action, thermostat_setting):
+def get_reward(state, action, thermostat_setting, thermostat_sensitivity):
     state_temp = 10 + state * 0.5
-    if abs(state_temp - thermostat_setting) <= 0.3:
+    if abs(state_temp - thermostat_setting) <= thermostat_sensitivity:
         return 150  # Daha yüksek ödül
     elif action == 1 and state_temp > thermostat_setting:
         return -200  # Daha yüksek ceza
@@ -395,7 +395,8 @@ def run_q_learning_simulation(params, outdoor_temp_values, q_params, interpolati
                 room_temperature -= heat_loss * 0.1
 
             next_state = get_state(room_temperature)
-            reward = get_reward(next_state, action, params['thermostat_setting'])
+            reward = get_reward(next_state, action, params['thermostat_setting'], params['thermostat_sensitivity'])
+
 
             q_table[state, action] += q_params['learning_rate'] * (
                 reward + q_params['discount_factor'] * np.max(q_table[next_state, :]) - q_table[state, action]
