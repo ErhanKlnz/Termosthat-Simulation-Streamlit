@@ -262,7 +262,6 @@ def run_on_off_simulation(params, outdoor_temp_values, interpolation_func):
         'on_off_cycles': heater_on_off_cycles
     }
 
-    
 def run_pid_simulation(params, outdoor_temp_values, pid_params, interpolation_func):
     time = []
     room_temperatures = []
@@ -282,6 +281,11 @@ def run_pid_simulation(params, outdoor_temp_values, pid_params, interpolation_fu
 
         # PID Control calculations
         error = params['thermostat_setting'] - room_temperature
+
+        # Hassasiyet kontrolü: Hata küçükse, PID kontrolü devreye girmez
+        if abs(error) <= params['thermostat_sensitivity']:
+            error = 0
+
         proportional_term = pid_params['Kp'] * error
         integral_error += error * 0.1
         integral_term = pid_params['Ki'] * integral_error
@@ -333,8 +337,6 @@ def run_pid_simulation(params, outdoor_temp_values, pid_params, interpolation_fu
         'on_off_cycles': heater_on_off_cycles
     }
 
-
-
 # Eylem Seçim Fonksiyonu
 def get_action(state, q_table, exploration_rate, num_actions):
     if np.random.rand() < exploration_rate:
@@ -347,9 +349,9 @@ def get_reward(state, action, thermostat_setting, thermostat_sensitivity):
     if abs(state_temp - thermostat_setting) <= thermostat_sensitivity:
         return 150  # Daha yüksek ödül
     elif action == 1 and state_temp > thermostat_setting:
-        return -200  # Daha yüksek ceza
+        return -100  # Daha yüksek ceza
     elif action == 0 and state_temp < thermostat_setting:
-        return -150  # Daha yüksek ceza
+        return -100  # Daha yüksek ceza
     else:
         return -50  # Diğer durumlarda daha düşük ceza
     
